@@ -221,7 +221,7 @@ Total active budget: **≤2000 tokens** of business logic at any time.
 
 ## Hallucination Guardrails
 
-Two rules that MUST be followed in every session:
+Three rules that MUST be followed in every session:
 
 1. **Never invent a rule without code.** A rule presented as active MUST have
    at least one verified `Code:` entry pointing to a real file:line:function
@@ -235,6 +235,43 @@ Two rules that MUST be followed in every session:
 Every candidate is classified as **active** (has verified Code entries) or
 **proposed** (developer intent, no Code entries). This classification is
 visible in the presentation and determines the entry's Status.
+
+3. **Always verify token budget before and after every write.** No file
+   (LOGIC.md or any segment) may exceed 1000 tokens. The agent MUST:
+   - **Pre-write estimation**: before writing a LOGIC.md or segment file,
+     estimate its token count using the formula `ceil(bytes / 3.5)`.
+     If the estimate exceeds 1000, do NOT write a single file — instead,
+     plan the split structure and write directly to segments.
+   - **Post-write verification**: immediately after writing every file,
+     re-estimate its token count. If it exceeds 1000, this is a violation:
+     revert the write, run the split procedure, and re-verify all resulting
+     segments. Continue recursively until every file is ≤ 1000 tokens.
+   - **Segment guard**: after any split, verify each new segment file.
+     If a segment exceeds 1000 tokens, recurse the split within that
+     segment's domain.
+   - **No deferral**: do not defer size enforcement to a later step.
+     Verify immediately. "Check size later" is a violation of this guardrail.
+
+## Token Estimation Formula
+
+Use this deterministic formula for all token estimates:
+
+```
+estimated_tokens = ceil(byte_count / 3.5)
+```
+
+Where `byte_count` is the file size in bytes (`wc -c` on Linux/macOS).
+The divisor 3.5 is a conservative average (Portuguese/English mix with
+code snippets). This is a floor value — actual tokenizers may produce
+slightly fewer tokens, but overestimation is safer than underestimation.
+
+Always report token estimates in the format:
+```
+File: ~XXX tokens (YYY bytes / 3.5)
+```
+
+For split plans, show the estimate for every resulting file and flag
+any that approach the limit (≥ 800 tokens).
 
 ## Presenting Choices with Trade-offs
 
@@ -281,10 +318,23 @@ See [references/validate.md](references/validate.md) for detailed flows.
 - **Batch** — routine additions, clarifications, extensions → accumulate in PENDING.md
 - **Drift detection** — `/validate-bl` cross-references LOGIC.md against actual code
 
-### 3. Apply
+### 3. Apply — Token-Budget-Gated
+
+**⚠️ MANDATORY: Every Apply cycle MUST execute Step 0 (pre-write) and
+Step 5 (post-write). Skipping either is a violation of the size guardrail.**
 
 On approval:
-1. **Re-verify** — run source verification on all Code entries again
+
+**Step 0 — Pre-write size estimate**
+Before writing any file, estimate the token count of the target file
+(LOGIC.md or segment) including the new entry. Use `ceil(bytes / 3.5)`.
+- If the estimate exceeds 1000 tokens: do NOT write to that file.
+  Instead, plan a split (or re-split) and write the new entry into the
+  appropriate segment directly.
+- If the estimate is ≤ 1000 tokens: proceed to Step 1.
+- Document the estimate in the operation log.
+
+**Step 1 — Re-verify** — run source verification on all Code entries again
    (file may have changed between detection and write). If any entry fails:
    - Block the write
    - Present the failure: `⛔ Write blocked: path:line no longer verifiable`
@@ -292,16 +342,32 @@ On approval:
        (a) Correct the path  — (recommended — reason: preserves the rule with accurate traceability | trade-offs: you must locate the correct location)
        (b) Remove the entry  — (reason: eliminates stale rules cleanly | trade-offs: rule is lost and must be re-detected later)
        (c) Force with override — (reason: fastest path | trade-offs: breaks traceability, future audits always flag this entry)
-2. **Determine target segment** — lookup entry Tags in SEGMENTS.md to find
+
+**Step 2 — Determine target segment** — lookup entry Tags in SEGMENTS.md to find
    the right segment file (see [references/auto-detect.md](references/auto-detect.md) — section 7).
-   If LOGIC.md is still unsplit, write directly to LOGIC.md.
-3. **Update** LOGIC.md or the matched segment file with the correct Status
+   If LOGIC.md is still unsplit, write directly to LOGIC.md (subject to Step 0).
+
+**Step 3 — Update** LOGIC.md or the matched segment file with the correct Status
    (active if it has Code entries, proposed if it doesn't)
-4. **Log** change in CHANGELOG.md
-5. **Check size** — if LOGIC.md > 1000 tokens → run split (see [references/split.md](references/split.md))
-6. **Refresh** RELATIONS.md and SEGMENTS.md
-7. **Update** Concerns section
-8. **Clear** approved proposals from PENDING.md
+
+**Step 4 — Log** change in CHANGELOG.md
+
+**Step 5 — Post-write size verification** (MANDATORY, never skip)
+   Immediately after writing, estimate the token count of the modified file
+   using `ceil(bytes / 3.5)`.
+   - If ≤ 1000 tokens: ✅ OK. Proceed to Step 6.
+   - If > 1000 tokens: ❌ VIOLATION. Immediately:
+     a. Revert the write (restore previous state)
+     b. Run the split procedure (see [references/split.md](references/split.md))
+     c. Re-write the new entry into the correct segment
+     d. Re-verify every resulting segment file is ≤ 1000 tokens
+     e. If any segment still > 1000, recurse split within that segment
+   - If any segment approaches the limit (≥ 800 tokens), note this in
+     LOGIC.md Concerns as `📏 Segment "<name>" at ~XXX tokens — near limit`
+
+**Step 6 — Refresh** RELATIONS.md and SEGMENTS.md
+**Step 7 — Update** Concerns section
+**Step 8 — Clear** approved proposals from PENDING.md
 
 ### 4. Archive
 

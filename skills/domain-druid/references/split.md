@@ -4,6 +4,9 @@ When LOGIC.md exceeds 1000 tokens, the skill automatically reorganizes it
 into multiple files under `.business-logic/<repo>/split/`. This keeps every file
 small, fast to load, and domain-focused.
 
+**⚠️ Enforcement is MANDATORY and immediate.** See Hallucination Guardrail #3
+in SKILL.md: pre-write estimate, post-write verify, never defer.
+
 ## Token Budget
 
 | Threshold | Action |
@@ -12,6 +15,55 @@ small, fast to load, and domain-focused.
 | LOGIC.md > 1000 tokens | Split into `split/` directory |
 | Any segment file > 1000 tokens | Recurse — split that segment further |
 | Split yields < 3 segments? | No — keep at previous level (anti-fragmentation) |
+
+## Token Estimation Formula
+
+Use this deterministic formula for ALL estimates:
+
+```
+estimated_tokens = ceil(byte_count / 3.5)
+```
+
+Where `byte_count` is obtained from `wc -c <file>` or an in-memory
+equivalent for pre-write estimates (count characters in the content
+string to be written).
+
+For pre-write estimation (file not yet on disk):
+```
+pre_write_bytes = len(content_string.encode('utf-8'))
+estimated_tokens = ceil(pre_write_bytes / 3.5)
+```
+
+If content is not yet assembled, estimate per-entry:
+- Each rule entry (with all fields): ~150-250 tokens depending on Code entries
+- Each definition entry: ~100-150 tokens
+- Segment header + index: ~50 tokens
+- Add 20% overhead for safety margin
+
+## Pre-Write Checks (MANDATORY — Step 0 of Apply)
+
+Before writing ANY file to `.business-logic/<repo>/`:
+
+1. **Assemble** the full content of the target file (LOGIC.md or segment)
+   in memory, including the new entry being added.
+2. **Estimate** using `ceil(content_bytes / 3.5)`.
+3. **If estimate > 1000 tokens:**
+   - Do NOT write the file as-is
+   - If writing to LOGIC.md (unsplit): immediately plan the split structure
+     and write directly to segment files. Never write LOGIC.md > 1000 tokens
+     even temporarily.
+   - If writing to a segment that already exists: split that segment into
+     sub-segments (recursive split).
+4. **If estimate ≤ 1000 tokens:** safe to write. Proceed.
+
+## Post-Write Verification (MANDATORY — Step 5 of Apply)
+
+Immediately after writing every file:
+
+1. **Measure** actual byte count: `wc -c <file>`
+2. **Estimate**: `ceil(byte_count / 3.5)`
+3. **If estimate > 1000 tokens:** VIOLATION. Revert, run split, re-verify.
+4. **If estimate ≥ 800 tokens:** flag in Concerns as near-limit.
 
 ## Split Procedure
 
@@ -249,22 +301,30 @@ Do NOT split if:
 
 These guards prevent premature splitting on small projects.
 
-## Token Estimation
+## Reporting Token Estimates
 
-Provide rough token counts when presenting the split plan:
+When presenting the split plan, use the formula `ceil(bytes / 3.5)` and
+report every file:
 
 ```
-LOGIC.md: 1200 tokens → exceeds 1000 threshold.
+Pre-write estimate: target file would be ~1350 tokens (4730 bytes / 3.5).
+→ Exceeds 1000 threshold. Splitting directly.
 
-Proposed split:
-  01-billing.md:      450 tokens
-  02-scheduling.md:   380 tokens
-  03-glossary.md:     280 tokens
-  05-cross-cutting.md:  0 tokens (empty — reserve for future)
-  INDEX.md:           90 tokens
-  SEGMENTS.md:        60 tokens
-  Total:             1260 tokens
-  Peak per file:      450 tokens ✅ (all under 1000)
+Split plan:
+  01-billing.md:      ~450 tokens (1570 bytes / 3.5)
+  02-scheduling.md:   ~380 tokens (1330 bytes / 3.5)
+  03-glossary.md:     ~280 tokens (985 bytes / 3.5)
+  05-cross-cutting.md:  ~0 tokens (empty — reserve for future)
+  INDEX.md:            ~90 tokens (320 bytes / 3.5)
+  SEGMENTS.md:         ~60 tokens (215 bytes / 3.5)
+  Total:              ~1260 tokens
+  Peak per file:       ~450 tokens ✅ (all under 1000)
 
 Proceed with split? (y/n)
+```
+
+For post-write verification:
+```
+✅ 01-billing.md: ~450 tokens (1570 bytes / 3.5) — OK
+⚠️ 02-scheduling.md: ~820 tokens (2870 bytes / 3.5) — near limit, flag in Concerns
 ```
