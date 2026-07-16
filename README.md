@@ -93,6 +93,7 @@ For full PR reviews, `/review-pr` runs the entire arsenal against a branch diff:
 | `/validate-bl` | Cross-reference LOGIC.md against codebase, surface contradictions, drift, and traceability gaps |
 | `/review-bl` | Present PENDING.md for batch review |
 | `/scan-bl <path>` | Scan file, module, or PR diff for potential business rules — interactive |
+| `/scan-bulk <path>` | Bulk scan a codebase path with pre-flight estimation, configurable skip options, and automatic segment generation — non-interactive per-candidate |
 | `/check-bl <path>` | Rule Druid — audit new/modified code against active business rules |
 | `/review-pr` | Peer review of a pull request branch — 4-pass review (compliance, detection, cross-ref, suggestions) |
 | `/reset-bl-skip` | Clear the skip cache (re-suggest previously rejected patterns) |
@@ -144,6 +145,7 @@ skills/domain-druid/
     ├── split.md                      # Auto-split at 1000t, segment structure, INDEX.md
     ├── context.md                    # Token budget table, deterministic loading algorithm
     ├── rule-druid.md                 # Compliance auditor algorithm, edge case handling
+    ├── bulk-scan.md                  # Bulk scan workflow (5 phases, drift, token guard)
     └── review-pr.md                  # PR peer review workflow (4-pass)
 ```
 
