@@ -44,7 +44,7 @@ def hash_file(filepath):
 def generate_manifest(src_dir):
     manifest = {}
     for root, dirs, files in os.walk(src_dir):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "dist", "build", "__pycache__")]
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "dist", "build", "__pycache__", ".next", "cache", ".cache")]
         for f in files:
             if not any(f.endswith(ext) for ext in (".ts", ".tsx", ".js", ".jsx", ".py", ".rs")):
                 continue

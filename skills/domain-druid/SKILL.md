@@ -137,6 +137,7 @@ it runs a git log scan:
 | `/merge-parallel` | Merge and deduplicate parallel scan reports. Uses `scripts/merge-parallel-results.sh`. |
 | `/coverage` | Map source directories against documented segments. Shows coverage % per directory and flags uncovered areas. See [references/coverage.md](references/coverage.md). |
 | `/scan-from-registry <src> --patterns-dir <dir>` | Technology-agnostic scan using pattern registry YAML files. Supports `--quick` mode. Uses `scripts/scan-from-registry.py`. |
+| `/hill-climb <src> <bl> <patterns> [--target N] [--max-iter N] [--quick]` | Auto-integrate high-confidence signals iteratively until plateau or target coverage. Uses `scripts/hill-climb.sh`. |
 
 ## Scan & Suggest
 
@@ -473,6 +474,7 @@ These commands help the skill operate on repos with 500+ source files and 30+ se
 | `/rebuild-fingerprints` | `scripts/rebuild-fingerprints.sh` | Rebuilds FINGERPRINTS.md by parsing all segment files. Run after adding/moving segments to keep fingerprints in sync. |
 | `/merge-parallel` | `scripts/merge-parallel-results.sh` | Merges and deduplicates outputs from parallel scan subagents. Ranks findings by signal strength (Rules.ts > middleware > enums > constants). |
 | `/coverage` | manual (see references) | Maps source directories against documented segments. Uses `tree` for directory structure, then computes coverage % per directory. |
+| `/hill-climb` | `scripts/hill-climb.sh` | Auto-integrate high-confidence (🔴) signals iteratively until plateau or target coverage. Per-iteration: scan → extract high-conf gaps → propose → validate frontmatter → rollback on failure → rebuild → re-measure. |
 
 ### Gap Detection Pipeline
 
@@ -518,6 +520,40 @@ These commands help the skill operate on repos with 500+ source files and 30+ se
        ├── Cross-references against known fingerprints
        └── Outputs: ✅ mapped / 🆕 new per signal
 ```
+
+### Hill-Climb Automation
+
+Runs the `verify-work` evaluation loop iteratively: detects gaps (source files
+without a segment reference), proposes batch of segments, re-verifies, and
+repeats until all gaps are filled (plateau at 0).
+
+```
+/hill-climb <src-dir> <bl-dir> <patterns-dir> [--max-iter 20] [--batch 50] [--confidence high|medium|low]
+  └── hill-climb.sh
+       ├── Setup:
+       │    └── Generate manifest baseline (snapshot of source file hashes)
+       │
+       ├── Iteration loop:
+       │    ├── Set manifest to empty → verify-work sees ALL source files as "new"
+       │    ├── verify-work.py → detect files without any segment code reference
+       │    ├── If 0 gaps → plateau → stop
+       │    ├── Take first N (--batch) → propose-entries.sh --auto → create segments
+       │    ├── Validate frontmatter → rollback on failure
+       │    ├── compile-segments.py --rebuild (SOURCE_MAP grows)
+       │    └── Next iteration: re-check entire codebase against new SOURCE_MAP
+       │
+       └── Output: initial gaps → final gaps, segments integrated, rollbacks
+```
+
+The metric is **binary gap count**: how many source files have zero segment
+references. Each iteration fills up to `--batch` gaps. Plateau at 0 means
+every source file is traced to at least one business logic segment.
+
+Baseline manifest is stored at `.domain-druid/manifest.baseline.json` — a
+snapshot of the source tree. Each iteration replaces the manifest with an
+empty `{}` so `verify-work.py` classifies every source file as "new" and
+compares it against the current SOURCE_MAP. This allows incremental evaluation
+without requiring actual file changes between iterations.
 
 ### Fingerprint Sync
 

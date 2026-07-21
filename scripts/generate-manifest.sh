@@ -16,6 +16,7 @@ trap 'rm -f "$TMPFILE"' EXIT
 
 find "$SRC_DIR" -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.py' -o -name '*.rs' \) \
   -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/build/*' \
+  -not -path '*/.next/*' -not -path '*/cache/*' -not -path '*/.cache/*' \
   -print0 | sort -z | while IFS= read -r -d '' FILE; do
   REL="${FILE#$SRC_DIR/}"
   HASH=$(sha256sum "$FILE" | cut -d' ' -f1)

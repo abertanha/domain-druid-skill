@@ -161,22 +161,48 @@ while IFS= read -r LINE; do
   # Derive layer name
   LAYER=$(detect_layer "$FILEPATH")
 
-  # Generate entry
-  ENTRY="## $TITLE
+  # Build tags as YAML list (include old TYPE as a tag)
+  TYPE_TAG=$(echo "$TYPE" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g')
+  TAGS_YAML="  - $TYPE_TAG"$'\n'
+  IFS=',' read -ra TAG_ARR <<< "$TAGS"
+  for TAG in "${TAG_ARR[@]}"; do
+    TAG="$(echo "$TAG" | xargs)"
+    [ -n "$TAG" ] && TAGS_YAML+="  - $TAG"$'\n'
+  done
 
-Auto-proposed from gap scan. Review and refine.
+  # Generate entry with YAML frontmatter + body code reference
+  RAW_ID="auto-$DOMAIN-$BASENAME"
+  SEG_ID=$(echo "$RAW_ID" | sed 's/[^a-zA-Z0-9_-]/-/g' | sed 's/--*/-/g; s/-$//; s/^-//')
+  [ -z "$SEG_ID" ] && SEG_ID="auto-unknown-$(date '+%s')"
+  DOMAIN_FIRST=$(echo "$DOMAIN" | cut -d'-' -f1)
+  ENTRY="---
+id: $SEG_ID
+type: segment
+domain: $DOMAIN_FIRST
+status: stub
+confidence: unverified
+fingerprints:
+  - $FP
+tags:
+${TAGS_YAML}established: '$(date '+%Y-%m-%d')'
+source_refs: 1
+description: Auto-proposed from high-confidence gap scan for $FILEPATH
+---
+
+## $TITLE
 
 - Type: $TYPE
-- Fingerprint: $FP
-- Tags: $TAGS
 - Code:
-  - $LAYER: $FILEPATH
-- Established: $(date '+%Y-%m-%d')
+  - $LAYER: \`$FILEPATH\`
+- Fingerprint: $FP
+- Established: '$(date '+%Y-%m-%d')'
+
+Auto-proposed from high-confidence gap scan. Review and refine the business logic described here.
 "
 
   if [ "$MODE" = "--auto" ]; then
     # Write to a new segment file (dedup: only write if file doesn't exist)
-    SEG_FILE="$OUT_DIR/auto-$DOMAIN-$BASENAME.md"
+    SEG_FILE="$OUT_DIR/$SEG_ID.md"
     if [ ! -f "$SEG_FILE" ]; then
       echo "$ENTRY" > "$SEG_FILE"
       echo "Wrote: $SEG_FILE"
