@@ -1,0 +1,88 @@
+# Backend-specific patterns
+name: backend
+confidence: medium
+requires:
+  - "source/"
+  - "server"
+  - "api"
+  - "routes"
+signals:
+  - name: api-endpoint
+    type: Rule
+    confidence: medium
+    patterns:
+      - "Router()"
+      - ".get("
+      - ".post("
+      - ".put("
+      - ".delete("
+      - ".patch("
+      - "express"
+      - "route"
+    files:
+      - "*Route*"
+      - "*Controller*"
+      - "*Api*"
+      - "*Endpoint*"
+    scan_content: true
+
+  - name: service-method
+    type: Rule
+    confidence: low
+    patterns:
+      - "async"
+      - "class "
+      - "extends "
+      - "implements "
+    files:
+      - "*Service*"
+      - "*Manager*"
+      - "*Handler*"
+    scan_content: true
+
+  - name: middleware-guard
+    type: Rule
+    confidence: high
+    patterns:
+      - "next()"
+      - "res.status"
+      - "return res"
+      - "if.*!.*return"
+      - "authMiddleware"
+      - "roleGuard"
+    files:
+      - "*Middleware*"
+      - "*Guard*"
+      - "*Auth*"
+    scan_content: true
+
+  - name: repository
+    type: Definition
+    confidence: low
+    patterns:
+      - "async"
+      - "find"
+      - "findOne"
+      - "findMany"
+      - "create"
+      - "update"
+      - "delete"
+    files:
+      - "*Repository*"
+      - "*Dao*"
+      - "*Data*"
+    scan_content: true
+
+  - name: config-constant
+    type: Limit
+    confidence: medium
+    patterns:
+      - "export const [A-Z_]"
+      - "module.exports ="
+      - "NODE_ENV"
+      - "process.env"
+    files:
+      - "*Config*"
+      - "*Constant*"
+      - "*.config.*"
+    scan_content: true

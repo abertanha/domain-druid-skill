@@ -26,20 +26,25 @@ using only file listing and `wc -l` (no file content reads yet):
 ### Step 0.1 — Discover files
 
 ```
-find <path> -type f \( -name '*.ts' -o -name '*.js' -o -name '*.py' -o -name '*.rs' \) | sort
+find <path> -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.py' -o -name '*.rs' \) | sort
 ```
 
 ### Step 0.2 — Classify each file by path/name heuristics
 
 | Pattern | Classification | Suggested skip? |
 |---------|---------------|-----------------|
-| `*.spec.ts`, `*.test.ts`, `__tests__/`, `test/` | Test | Yes (recommended) |
-| `*Rules.ts`, `*Service.ts`, `*Business.ts`, `*Engine.ts` | High business logic density | No |
+| `*.spec.ts`, `*.test.ts`, `*.spec.tsx`, `*.test.tsx`, `__tests__/`, `test/` | Test | Yes (recommended) |
+| `*Rules.ts`, `*Rules.tsx`, `*Service.ts`, `*Service.tsx`, `*Business.ts`, `*Engine.ts` | High business logic density | No |
 | `*Controller.ts`, `*Handler.ts`, `*Router.ts` | Medium — contains input validators | Skip validators (recommended) |
 | `*.d.ts`, `types.ts`, `type.ts`, `interfaces.ts` | Type definitions only | Yes (recommended) |
 | `config.ts`, `*.json`, `*.yaml`, `*.yml` | Configuration, no logic | Yes (recommended) |
 | `*Middleware.ts`, `*Guard.ts` | Cross-cutting logic | No |
 | `*Model.ts`, `*Schema.ts`, `*Entity.ts` | Schema/ORM definitions | Medium value |
+| `*Hook.ts`, `*Hook.tsx`, `*hooks.ts`, `*hooks.tsx` | High — hooks contain business logic | No |
+| `*Slice.ts`, `*Slice.tsx`, `store*.ts` | High — state transitions = rules | No |
+| `*Context.tsx`, `*Context.ts`, `*Provider.tsx` | Medium — global state logic | No |
+| `*Validator.ts`, `*Validation.ts` | High — form/business validation rules | No |
+| `*Api.ts`, `*Api.tsx`, `*Gateway.ts` | Medium — endpoint definitions | No |
 
 ### Step 0.3 — Quick line count
 
@@ -219,6 +224,12 @@ For each file read, identify:
 | Error message | Rule | Only if the message encodes domain logic |
 | Service method | Rule | The method's core business logic, not CRUD boilerplate |
 | Exports/composition | Definition | Class/service structure, module boundaries |
+| Hook state/effect | Rule | Custom hooks with business logic (frontend) |
+| Slice reducer case | Rule | State transitions that encode business rules (frontend) |
+| Context value shape | Definition | Global state structure (frontend) |
+| Validation schema | Rule | Yup/zod field rules and refinements (frontend) |
+| API endpoint + transform | Rule + Definition | Request/response business logic (frontend) |
+| Test assertion | Invariant | Encoded business behavior (frontend) |
 
 ### Step 3.3 — Generate segment content
 

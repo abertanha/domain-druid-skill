@@ -25,13 +25,31 @@ one subdirectory per repository. `<repo>` is the repository directory name
 └── .business-logic/
     ├── repo1/
     │   ├── LOGIC.md
+    │   ├── INDEX.md
     │   ├── FINGERPRINTS.md
+    │   ├── SOURCE_MAP.md
+    │   ├── COMPILER_REPORT.md
+    │   ├── PENDING.md
+    │   ├── CHANGELOG.md
+    │   ├── .domain-druid/
+    │   │   └── manifest.json
     │   ├── split/
+    │   │   ├── 01-domain-a.md
+    │   │   └── 02-domain-b.md
+    │   ├── archive/
     │   └── reviews/
     └── repo2/
         ├── LOGIC.md
+        ├── INDEX.md
         ├── FINGERPRINTS.md
+        ├── SOURCE_MAP.md
+        ├── COMPILER_REPORT.md
+        ├── PENDING.md
+        ├── CHANGELOG.md
+        ├── .domain-druid/
+        │   └── manifest.json
         ├── split/
+        ├── archive/
         └── reviews/
 ```
 
@@ -49,6 +67,31 @@ Agent:  1. Detects current repo name from working directory
          4. Offers git post-commit hook for auto-detection
          5. Outputs: "Ready. Business logic for <repo> set up."
 ```
+
+### Segment Format
+
+All segments use YAML frontmatter with validated schema. Required fields:
+
+```yaml
+---
+id: 01-auth-roles-a
+type: segment
+domain: auth
+confidence: high
+fingerprints:
+  - tesseractx-auth-roles
+tags:
+  - auth
+  - roles
+established: "2026-07-21"
+source_refs: 1
+description: Auth and roles rules for the AGX corporate domain
+---
+```
+
+Run `scripts/migrate-frontmatter.py <split-dir>` to add frontmatter to legacy segments.
+Run `scripts/compile-segments.py <bl-root> --rebuild` to regenerate INDEX.md,
+FINGERPRINTS.md, and SOURCE_MAP.md with 0-issue validation.
 
 ## Trigger Modes
 
@@ -85,6 +128,15 @@ it runs a git log scan:
 | `/review-pr` | Peer review of a pull request: compliance check, new rule detection, cross-reference, and suggestions (see [references/review-pr.md](references/review-pr.md)). |
 | `/history-bl` | Load CHANGELOG.md (never auto-loaded; must be explicit) |
 | `/archive-bl` | Move deprecated rules to archive, regenerate INDEX.md + RELATIONS.md |
+| `/gap-scan [--quick]` | Scan source for undocumented rule signals with auto cross-referencing (✅ mapped vs 🆕 new). Uses `scripts/detect-gaps.sh`. Phase 4 compares findings against segment Code: entries. |
+| `/gap-scan --propose [--auto]` | After scan, generate draft segment entries from 🆕 findings. Default `--review` (y/n per candidate). `--auto` writes directly. Uses `scripts/propose-entries.sh`. |
+| `/verify-work` | Post-implementation check: manifest diff + path matching. Detects changed files not referenced in any segment. Uses `scripts/verify-work.py`. |
+| `/verify-work-pending` | `/verify-work` + auto-writes undocumented files to PENDING.md as structured pending entries with inferred type/fingerprint/tags. Entry format: `### Pending: <path>` with discovered date, type, fingerprint, tags, and status. Dedup by path. Uses `--write-pending` flag on `verify-work.py`. |
+| `/rebuild-fingerprints` | Rebuild FINGERPRINTS.md from all segment files. Uses `scripts/rebuild-fingerprints.sh`. Run after adding/moving segments. |
+| `/compile-bl [--rebuild]` | Validate frontmatter schema, cross-reference fingerprints, regenerate INDEX.md, FINGERPRINTS.md, SOURCE_MAP.md, and COMPILER_REPORT.md. Uses `scripts/compile-segments.py`. |
+| `/merge-parallel` | Merge and deduplicate parallel scan reports. Uses `scripts/merge-parallel-results.sh`. |
+| `/coverage` | Map source directories against documented segments. Shows coverage % per directory and flags uncovered areas. See [references/coverage.md](references/coverage.md). |
+| `/scan-from-registry <src> --patterns-dir <dir>` | Technology-agnostic scan using pattern registry YAML files. Supports `--quick` mode. Uses `scripts/scan-from-registry.py`. |
 
 ## Scan & Suggest
 
@@ -216,6 +268,16 @@ High-level rules:
 8. **RELATIONS.md** → only on `/validate-bl` or impact analysis
 9. **CHANGELOG.md** → only on `/history-bl`
 10. **Archive/** → never loaded unless explicitly referenced
+11. **`references/coverage.md`** → only on `/coverage` (~200t)
+12. **`scripts/detect-gaps.sh`** → only on `/gap-scan` (~300t)
+13. **`scripts/propose-entries.sh`** → only on `/gap-scan --propose` (~200t)
+14. **`scripts/verify-work.py`** → only on `/verify-work` or `/verify-work-pending` (~200t)
+15. **`scripts/compile-segments.py`** → only on `/compile-bl` (~200t)
+16. **`scripts/scan-from-registry.py`** → only on `/scan-from-registry` (~200t)
+17. **`scripts/rebuild-fingerprints.sh`** → only on `/rebuild-fingerprints` (~150t)
+18. **`scripts/merge-parallel-results.sh`** → only on `/merge-parallel` (~200t)
+19. **`patterns/*.yaml`** → only on tech-agnostic scan (~200t)
+20. **`COMPILER_REPORT.md`** → only on `/compile-bl` (~100t)
 
 Total active budget: **≤2000 tokens** of business logic at any time.
 
@@ -397,6 +459,93 @@ The `reviews/` directory is auto-created on first execution.
 New rules found during Pass 2 are proposed to PENDING.md via the standard
 Ingestion Loop (y/n/edit per candidate), exactly like `/scan-bl`.
 
+## Scaling Improvements (Large Codebases)
+
+These commands help the skill operate on repos with 500+ source files and 30+ segments.
+
+| Command | Script | Purpose |
+|---------|--------|---------|
+| `/gap-scan` | `scripts/detect-gaps.sh` | Scans source for rule signals with Phase 4 cross-referencing against existing Code: entries. Supports `--quick`, `--patterns-dir`, `--verify`, `--verify-work`, `--verify-work-pending`. |
+| `/gap-scan --propose [--auto]` | `scripts/propose-entries.sh` | Generates draft segment entries from 🆕 gap findings. `--review` (default) shows y/n per candidate. `--auto` writes directly to segment files. |
+| `/verify-work-pending` | `scripts/verify-work.py --write-pending` | Post-implementation check + auto-write gaps to PENDING.md with inferred type/fingerprint/tags. Dedup by path. |
+| `/compile-bl [--rebuild]` | `scripts/compile-segments.py` | Validates frontmatter schema, cross-references fingerprints, auto-generates INDEX.md, FINGERPRINTS.md, SOURCE_MAP.md. Exit 0 = 0 issues. |
+| `/scan-from-registry` | `scripts/scan-from-registry.py` | Technology-agnostic scan using pattern registry (patterns/*.yaml). Supports `--quick` and `--patterns-dir`. |
+| `/rebuild-fingerprints` | `scripts/rebuild-fingerprints.sh` | Rebuilds FINGERPRINTS.md by parsing all segment files. Run after adding/moving segments to keep fingerprints in sync. |
+| `/merge-parallel` | `scripts/merge-parallel-results.sh` | Merges and deduplicates outputs from parallel scan subagents. Ranks findings by signal strength (Rules.ts > middleware > enums > constants). |
+| `/coverage` | manual (see references) | Maps source directories against documented segments. Uses `tree` for directory structure, then computes coverage % per directory. |
+
+### Gap Detection Pipeline
+
+```
+/gap-scan
+  └── detect-gaps.sh ──→ Phase 1-3: scan for signals
+                      └── Phase 4: cross-ref against known Code: entries
+                           ├── ✅ mapped (file already referenced)
+                           └── 🆕 new (no segment references this file)
+                                │
+/gap-scan --propose        ←───┘
+  └── propose-entries.sh ──→ generate draft segment entries
+                           ├── --review (y/n per candidate)
+                           └── --auto (write directly)
+```
+
+### Self-Verification Loop (Post-Implementation)
+
+```
+/verify-work-pending
+  └── verify-work.py --write-pending
+       ├── exit 0 → ✅ all changes covered → commit
+       └── exit 1 → 🔶 undocumented files found
+            │
+            ├── for each gap file:
+            │   infer type/domain/fingerprint/tags from path
+            │   write structured entry to PENDING.md
+            │   dedup by path (skip if already pending)
+            │
+            └── agent reviews PENDING.md:
+                 for each entry → integrate into segment
+                 → /verify-work (re-verify) → exit 0 → commit
+```
+
+### Technology-Agnostic Scanning
+
+```
+/scan-from-registry <src> <pattern-dir> --patterns-dir <dir>
+  └── scan-from-registry.py
+       ├── Loads pattern YAML files from patterns/
+       │   (generic, typescript, react, redux, backend)
+       ├── Matches file patterns + content regex
+       ├── Cross-references against known fingerprints
+       └── Outputs: ✅ mapped / 🆕 new per signal
+```
+
+### Fingerprint Sync
+
+```
+/rebuild-fingerprints
+  └── rebuild-fingerprints.sh ──→ parse all segments → FINGERPRINTS.md
+```
+
+Run after any segment add/move to keep fingerprints in sync with segments.
+
+### Parallel Scan Merge
+
+```
+/merge-parallel report1.md report2.md report3.md
+  └── merge-parallel-results.sh ──→ deduplicate → score → rank → merged report
+```
+
+Use with `/scan-parallel` subagent results for large repos.
+
+### Coverage Check
+
+```
+/coverage
+  └── tree -d source/ → lookup segment Code: entries → compute % per dir → flag low
+```
+
+See [references/coverage.md](references/coverage.md) for full workflow.
+
 ## Split Behavior (Auto-Scale)
 
 See [references/split.md](references/split.md) for full rules.
@@ -408,6 +557,28 @@ See [references/split.md](references/split.md) for full rules.
 - INDEX.md is generated as the navigation hub
 
 ## Entry Format
+
+### Segment Frontmatter Schema
+
+All segment files in `split/` use YAML frontmatter validated by `compile-segments.py`:
+
+```yaml
+---
+id: 01-billing-rules        # ^[\w-]+$ — unique segment identifier
+type: segment                # Segment | stub
+domain: billing              # Business domain (free-form)
+status: active               # active | archived | stub
+confidence: high             # high | medium | low | unverified
+fingerprints: []             # list of canonical fingerprint strings for dedup
+tags: []                     # list of domain tags for routing
+established: "2026-07-21"    # ISO date
+source_refs: 0               # count of Code: entries in this segment
+related: []                  # list of related segment IDs
+description: ""              # free-form narrative
+---
+```
+
+### Entry Format
 
 Each business logic entry follows the schema in [references/format.md](references/format.md).
 Summary:

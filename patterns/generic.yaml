@@ -1,0 +1,103 @@
+# Generic/language-agnostic patterns
+# These work for any codebase regardless of language or framework.
+name: generic
+confidence: high
+signals:
+  - name: enum-definition
+    type: Definition
+    confidence: high
+    patterns:
+      - "enum "
+      - "type .* =.*\\|"
+    files:
+      - "*.ts"
+      - "*.tsx"
+      - "*.js"
+    scan_content: true
+
+  - name: constant-limit
+    type: Limit
+    confidence: medium
+    patterns:
+      - "MAX_"
+      - "MIN_"
+      - "_LIMIT"
+      - "_TIMEOUT"
+      - "_THRESHOLD"
+    files:
+      - "*.ts"
+      - "*.tsx"
+      - "*.js"
+      - "*.py"
+
+  - name: state-machine
+    type: Rule
+    confidence: medium
+    patterns:
+      - "if.*===.*status"
+      - "switch.*status"
+      - "case '"
+    files:
+      - "*Service*"
+      - "*Machine*"
+      - "*State*"
+    scan_content: true
+
+  - name: validation-guard
+    type: Invariant
+    confidence: high
+    patterns:
+      - "function.*[Vv]alidate"
+      - "function.*[Gg]uard"
+      - "function.*[Cc]heck"
+      - "if.*throw.*[Ee]rror"
+      - "if.*return.*false"
+    files:
+      - "*Validator*"
+      - "*Guard*"
+      - "*Rules*"
+    scan_content: true
+
+  - name: feature-flag
+    type: Rule
+    confidence: medium
+    patterns:
+      - "feature.*flag"
+      - "isEnabled"
+      - "featureToggle"
+      - "if.*level.*==="
+    files:
+      - "*[Ff]eature*"
+      - "*[Ff]lag*"
+      - "*[Ll]evel*"
+    scan_content: true
+
+  - name: db-constraint
+    type: Invariant
+    confidence: high
+    patterns:
+      - "unique: true"
+      - "required: true"
+      - "nullable: false"
+      - "ref:"
+    files:
+      - "*Schema*"
+      - "*Model*"
+      - "*Entity*"
+      - "*Migration*"
+    scan_content: true
+
+  - name: test-assertion
+    type: Invariant
+    confidence: low
+    patterns:
+      - "expect\\("
+      - "assert\\("
+      - "it\\("
+      - "describe\\("
+    files:
+      - "*.test.*"
+      - "*.spec.*"
+      - "*__tests__*"
+      - "__mocks__/*"
+    scan_content: true

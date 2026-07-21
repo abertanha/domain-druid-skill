@@ -86,6 +86,13 @@ it runs a git log scan:
 | `/review-pr` | Peer review of a pull request: compliance check, new rule detection, cross-reference, and suggestions (see [references/review-pr.md](references/review-pr.md)). |
 | `/history-bl` | Load CHANGELOG.md (never auto-loaded; must be explicit) |
 | `/archive-bl` | Move deprecated rules to archive, regenerate INDEX.md + RELATIONS.md |
+| `/init-manifest` | Generate initial Source MANIFEST (file hashes) for incremental scanning. See [references/manifest.md](references/manifest.md). |
+| `/refresh-manifest` | Recompute file hashes and diff against previous manifest. See [references/manifest.md](references/manifest.md). |
+| `/build-source-map` | Build inverse index mapping source files to segments. See [references/source-map.md](references/source-map.md). |
+| `/gap-scan [path]` | Automated gap analysis: scan source, extract signals, cross-ref fingerprints, output gap report. See [references/gap-agent.md](references/gap-agent.md). |
+| `/check-staleness` | Detect segments whose source files changed since last sync. See [references/staleness.md](references/staleness.md). |
+| `/scan-parallel [path]` | Parallel scanning via Task subagents for large codebases. See [references/parallel-scan.md](references/parallel-scan.md). |
+| `/fix-refs` | Repair broken Code: entries after file renames/deletions. See [references/staleness.md](references/staleness.md). |
 
 ## Scan & Suggest
 
@@ -122,6 +129,11 @@ goes through an interactive confirmation loop before anything is written.
 | DB constraint | `UNIQUE(email)` | Invariant |
 | Error message | `"cannot delete account with balance > 0"` | Rule |
 | Config toggle | `feature_flag("new_pricing")` | Decision |
+| Hook state/effect (frontend) | `useState`, `useEffect`, `useReducer` | Rule / Invariant |
+| Slice reducer (frontend) | `createSlice`, `reducer`, `initialState` | Rule / Definition |
+| Context provider (frontend) | `createContext`, `Context.Provider` | Definition |
+| Validation schema (frontend) | `yup.object().shape(...)`, `zod.string()` | Rule / Invariant |
+| API service (frontend) | `axios.get`, `baseURL`, `interceptor` | Rule / Definition |
 
 ### Output format
 
@@ -228,6 +240,11 @@ High-level rules:
 8. **RELATIONS.md** → only on `/validate-bl` or impact analysis
 9. **CHANGELOG.md** → only on `/history-bl`
 10. **Archive/** → never loaded unless explicitly referenced
+11. **references/manifest.md** → only on `/init-manifest` or `/refresh-manifest` (~200t)
+12. **references/gap-agent.md** → only on `/gap-scan` (~300t)
+13. **references/source-map.md** → only on `/build-source-map`, `/check-staleness`, or `/gap-scan` (~200t)
+14. **references/staleness.md** → only on `/check-staleness` or `/fix-refs` (~300t)
+15. **references/parallel-scan.md** → only on `/scan-parallel` (~400t)
 
 Total active budget: **≤2000 tokens** of business logic at any time.
 
@@ -517,3 +534,120 @@ This skill complements:
 
 When any of these skills completes a task, check if new business logic was
 created or modified. If so, run the ingestion loop.
+
+## Scaling Improvements
+
+The following capabilities address Domain Druid performance in large codebases
+(50+ segments, 200+ source files). They are independent — use only what you need.
+
+### When to use what
+
+| Codebase size | Recommended setup | Commands |
+|---------------|------------------|----------|
+| Small (<10 segments, <50 files) | Default Druid — no scaling needed | `/scan-bl`, `/scan-bulk` |
+| Medium (10-30 segments, 50-200 files) | Source MANIFEST + SOURCE_MAP | `/init-manifest`, `/build-source-map`, `/gap-scan` |
+| Large (30-100 segments, 200-500 files) | Above + Staleness check | Add `/check-staleness` |
+| Very large (100+ segments, 500+ files) | All of the above + Parallel | Add `/scan-parallel` |
+
+### Onboarding sequence for large repos
+
+```
+1. /init-manifest        → establish baseline file hashes
+2. /build-source-map     → map existing segments to source files
+3. /gap-scan             → find undocumented business logic
+4. /check-staleness      → flag segments with stale code refs
+5. /scan-parallel        → (optional) faster full-tree re-scans
+```
+
+After onboarding, the routine maintenance cycle is:
+```
+/refresh-manifest → /check-staleness → /gap-scan --quick → /review-bl
+```
+
+### Post-Implementation Verification Loop
+
+After any code change or segment integration, run `/verify-work` to check
+that all touched files are covered. This is a **fast path** (~0.1s) that
+uses manifest diff + path matching — no content scanning.
+
+```
+1. /gap-scan --quick              ← understand existing gaps (30s, ~10K lines)
+2. implement                       ← do the work
+3. /verify-work                   ← NEW: manifest diff + path check (0.1s, ~20 lines)
+   ├── exit 0 → all covered ✅ → /refresh-manifest → commit
+   └── exit 1 → new gaps 🆕 → agent proposes → /verify-work again → loop
+4. /refresh-manifest              ← commit new baseline
+```
+
+Token cost of the evaluation step is **negligible** because it only compares
+file hashes in the manifest and does path lookups against SOURCE_MAP.md.
+For a typical task touching 1-10 files, the output is ~20 lines.
+
+### File layout
+
+```
+.business-logic/<repo>/
+├── .domain-druid/
+│   └── manifest.json          ← Source MANIFEST (auto-generated)
+├── SOURCE_MAP.md               ← Reverse index (auto-generated, see references/source-map.md)
+├── FINGERPRINTS.md             ← Known fingerprints (existing)
+├── INDEX.md                    ← Navigation (existing)
+├── split/                      ← Segment files (existing)
+├── reviews/                    ← Gap/staleness reports
+│   ├── 2026-07-17-gap-report.md
+│   └── 2026-07-17-staleness.md
+└── ...
+```
+
+### Scripts reference
+
+Helper scripts live in `scripts/`:
+- `scripts/generate-manifest.sh <source-dir> <output>` — generate file hash manifest
+- `scripts/build-source-map.sh <bl-dir> <output>` — build source→segment inverse index
+- `scripts/detect-gaps.sh <source-dir> <bl-dir> <output> [--quick|--verify|--verify-work|--patterns-dir]` — scan for rule signals
+  - `--quick` — Rules.ts + enums only
+  - `--verify <prev-report>` — compare against previous run (resolved vs remaining)
+  - `--verify-work` — post-implementation check (manifest diff, ~0.1s, path-match only)
+  - `--patterns-dir <dir>` — use YAML pattern registry for tech-agnostic scanning
+- `scripts/verify-work.py <src-dir> <bl-root> [--strict]` — standalone verify-work (exit 0 = all covered)
+- `scripts/migrate-frontmatter.py <segments-dir> [--dry-run]` — add YAML frontmatter to existing segments
+- `scripts/compile-segments.py <bl-root> [--rebuild] [--fix]` — validate frontmatter, rebuild INDEX/FINGERPRINTS/SOURCE_MAP
+- `scripts/scan-from-registry.py <patterns-dir> <source-dir> <bl-dir>` — technology-agnostic pattern scanner
+
+### Pattern Registry
+
+Domain Druid now supports **technology-agnostic scanning** via YAML pattern files in `patterns/`:
+- `patterns/generic.yaml` — language-agnostic (enums, constants, state machines, validators, tests)
+- `patterns/typescript.yaml` — TS-specific (interfaces, types, decorators)
+- `patterns/react.yaml` — React-specific (hooks, contexts, forms)
+- `patterns/redux.yaml` — Redux-specific (slices, thunks, selectors)
+- `patterns/backend.yaml` — backend-specific (routes, services, middleware, repos)
+
+Add new `patterns/` files for any tech stack. Use `--patterns-dir` to activate:
+
+```
+/gap-scan --patterns-dir /path/to/patterns
+```
+
+### Segment Format
+
+All segments now use YAML frontmatter for machine-parseable metadata:
+
+```yaml
+---
+id: "02-proposals-view"
+type: "segment"
+domain: "proposal"
+status: "active"
+confidence: "high"
+fingerprints:
+  - "enum-ProposalSituation-4"
+tags: ["proposal", "ui"]
+established: "2026-07-06"
+source_refs: 25
+description: "UI for proposal listing..."
+---
+```
+
+The compiler (`compile-segments.py --rebuild`) validates schema, cross-references
+fingerprints, and auto-generates `INDEX.md`, `FINGERPRINTS.md`, and `SOURCE_MAP.md`.

@@ -1,0 +1,67 @@
+# React-specific patterns
+name: react
+confidence: low
+requires:
+  - ".tsx"
+  - "jsx"
+  - "react"
+signals:
+  - name: custom-hook
+    type: Invariant
+    confidence: low
+    patterns:
+      - "use[A-Z]"
+      - "useState"
+      - "useEffect"
+      - "useReducer"
+      - "useCallback"
+      - "useMemo"
+    files:
+      - "use*.ts"
+      - "use*.tsx"
+      - "*[Hh]ook*"
+    scan_content: true
+
+  - name: context-provider
+    type: Definition
+    confidence: low
+    patterns:
+      - "createContext"
+      - "useContext"
+      - "Context.Provider"
+      - ".Provider"
+    files:
+      - "*Context*"
+      - "*Provider*"
+    scan_content: true
+
+  - name: form-validation
+    type: Invariant
+    confidence: medium
+    patterns:
+      - "yup"
+      - "zod"
+      - ".shape"
+      - ".string()"
+      - ".number()"
+      - ".required"
+      - "validate("
+      - "formik"
+      - "react-hook-form"
+    files:
+      - "*Validator*"
+      - "*Form*"
+      - "*Schema*"
+    scan_content: true
+
+  - name: rules-file
+    type: Rule
+    confidence: high
+    patterns:
+      - "function "
+      - "export "
+      - "const [A-Z_]"
+    files:
+      - "*Rules.ts"
+      - "*Rules.tsx"
+    scan_content: true

@@ -1,0 +1,49 @@
+# Redux-specific patterns
+name: redux
+confidence: medium
+requires:
+  - "redux"
+  - "@reduxjs/toolkit"
+  - "createSlice"
+signals:
+  - name: state-slice
+    type: Definition
+    confidence: medium
+    patterns:
+      - "createSlice"
+      - "createReducer"
+      - "initialState"
+      - "reducer"
+      - "extraReducers"
+    files:
+      - "*Slice.ts"
+      - "*Slice.tsx"
+      - "store*.ts"
+    scan_content: true
+
+  - name: async-thunk
+    type: Rule
+    confidence: medium
+    patterns:
+      - "createAsyncThunk"
+      - "createAction"
+      - "extraReducers"
+      - ".pending"
+      - ".fulfilled"
+      - ".rejected"
+    files:
+      - "*Slice.ts"
+      - "*Slice.tsx"
+    scan_content: true
+
+  - name: selector
+    type: Definition
+    confidence: low
+    patterns:
+      - "createSelector"
+      - "useSelector"
+      - "select[A-Z]"
+    files:
+      - "*Select*"
+      - "*Slice.ts"
+    scan_content: true

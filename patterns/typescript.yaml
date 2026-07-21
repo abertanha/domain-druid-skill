@@ -1,0 +1,41 @@
+# TypeScript-specific patterns
+name: typescript
+confidence: medium
+requires:
+  - "*.ts"
+  - "*.tsx"
+signals:
+  - name: type-union
+    type: Definition
+    patterns:
+      - "type [A-Z]"
+      - "interface [A-Z]"
+    files:
+      - "*.ts"
+      - "*.tsx"
+    scan_content: true
+
+  - name: interface-contract
+    type: Definition
+    confidence: medium
+    patterns:
+      - "^interface [A-Z]"
+      - "^type [A-Z].*="
+    files:
+      - "I*.ts"
+      - "I*.tsx"
+      - "types.ts"
+      - "*.types.ts"
+    scan_content: true
+
+  - name: decorator-config
+    type: Rule
+    confidence: low
+    patterns:
+      - "@[A-Z]"
+      - "Injectable"
+      - "Component"
+    files:
+      - "*.ts"
+      - "*.tsx"
+    scan_content: true
