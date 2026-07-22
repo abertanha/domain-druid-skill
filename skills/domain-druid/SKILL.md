@@ -138,6 +138,7 @@ it runs a git log scan:
 | `/coverage` | Map source directories against documented segments. Shows coverage % per directory and flags uncovered areas. See [references/coverage.md](references/coverage.md). |
 | `/scan-from-registry <src> --patterns-dir <dir>` | Technology-agnostic scan using pattern registry YAML files. Supports `--quick` mode. Uses `scripts/scan-from-registry.py`. |
 | `/hill-climb <src> <bl> <patterns> [--target N] [--max-iter N] [--quick]` | Auto-integrate high-confidence signals iteratively until plateau or target coverage. Uses `scripts/hill-climb.sh`. |
+| `/meta-suggest [--threshold N]` | Analyze skill operation history, detect patterns, and suggest improvements. Uses `scripts/meta-suggest.sh`. |
 
 ## Scan & Suggest
 
@@ -279,6 +280,9 @@ High-level rules:
 18. **`scripts/merge-parallel-results.sh`** → only on `/merge-parallel` (~200t)
 19. **`patterns/*.yaml`** → only on tech-agnostic scan (~200t)
 20. **`COMPILER_REPORT.md`** → only on `/compile-bl` (~100t)
+21. **`scripts/meta-record.sh`** → after each operation (~100t)
+22. **`scripts/meta-analyze.sh`** → every N operations or on `/meta-suggest` (~200t)
+23. **`scripts/meta-suggest.sh`** → only on `/meta-suggest` (~50t)
 
 Total active budget: **≤2000 tokens** of business logic at any time.
 
@@ -475,6 +479,7 @@ These commands help the skill operate on repos with 500+ source files and 30+ se
 | `/merge-parallel` | `scripts/merge-parallel-results.sh` | Merges and deduplicates outputs from parallel scan subagents. Ranks findings by signal strength (Rules.ts > middleware > enums > constants). |
 | `/coverage` | manual (see references) | Maps source directories against documented segments. Uses `tree` for directory structure, then computes coverage % per directory. |
 | `/hill-climb` | `scripts/hill-climb.sh` | Auto-integrate high-confidence (🔴) signals iteratively until plateau or target coverage. Per-iteration: scan → extract high-conf gaps → propose → validate frontmatter → rollback on failure → rebuild → re-measure. |
+| `/meta-suggest` | `scripts/meta-suggest.sh` | Analyze skill operation history, detect patterns (duration, zero-delta, failures, tool chain repetition), and suggest improvements. |
 
 ### Gap Detection Pipeline
 
@@ -554,6 +559,68 @@ snapshot of the source tree. Each iteration replaces the manifest with an
 empty `{}` so `verify-work.py` classifies every source file as "new" and
 compares it against the current SOURCE_MAP. This allows incremental evaluation
 without requiring actual file changes between iterations.
+
+### Meta Hill-Climb (Skill Self-Evaluation)
+
+The skill instruments its own operations to collect performance data and
+surface data-grounded improvement suggestions.
+
+**Data collected per operation:**
+
+| Field | Description |
+|-------|-------------|
+| `op` | Operation name (`verify-work`, `hill-climb`, `compile`, `propose-entries`, etc.) |
+| `duration_s` | Wall-clock duration in seconds |
+| `success` | Whether the operation produced the expected result |
+| `exit_code` | Process exit code |
+| `files_scanned` | Source files examined |
+| `loc_scanned` | Lines of code examined |
+| `gaps_before/after` | Gap count before and after |
+| `segments_before/after` | Segment count before and after |
+| `tool_calls` | Count of Read/Write/Edit/Bash/Grep/Glob calls made |
+| `output_chars` | Output character count |
+| `decision` | Why this approach was chosen (brief string) |
+| `error` | Error message if the operation failed |
+
+**Log location:** `~/.config/opencode/skills/domain-druid/meta/operations.ndjson`
+(append-only newline-delimited JSON).
+
+**Workflow:**
+
+1. **After each operation**, call `meta-record.sh <op-name> [flags]` with all
+   available data. The agent self-reports: it tracks start/end times, counts
+   its own tool calls, captures gaps delta, and records its decision rationale
+   in `--decision`.
+
+2. **Every N operations** (N read from `meta/threshold`, default 3), the agent
+   calls `meta-analyze.sh` to scan for patterns:
+   - ⏱ Duration outliers — ops significantly slower than their mean
+   - 0️⃣ Zero-delta ops — operations that changed nothing (wasted work)
+   - ❌ Failure clusters — same op failing repeatedly
+   - 🔁 Repetitive tool chains — sequences that repeat and could be scripted
+   - 📊 Volume spikes — files/loc scanned jumping anomalously
+
+3. Output is written to `meta/suggestions.md`. The agent presents this to the
+   user for review, and records which suggestions were accepted or rejected.
+
+**Manual trigger:**
+
+```
+/meta-suggest [--threshold N]
+  └── scripts/meta-suggest.sh ──→ meta-analyze.sh → suggestions.md
+```
+
+**Threshold configuration:**
+- File: `meta/threshold` (plain text, default `3`)
+- Override: `--threshold N` on `meta-suggest.sh` or `meta-analyze.sh`
+
+**Agent responsibilities:**
+- Track operation start time with `date +%s` before each major operation
+- Count tool calls made during the operation (Read, Write, Edit, Bash, Grep, Glob)
+- Capture gaps delta from `verify-work.py` stdout when applicable
+- Log decision rationale: `--decision "why I chose this approach"`
+- After every N operations, run `meta-analyze.sh` and present `suggestions.md`
+- After user review, log accepted/rejected suggestions in a follow-up record
 
 ### Fingerprint Sync
 
