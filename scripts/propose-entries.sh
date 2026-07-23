@@ -10,6 +10,16 @@ OUT_DIR="${2:?Usage: propose-entries.sh <gap-report> <output-dir> [--review|--au
 MODE="${3:---review}"
 SRC_DIR=""
 
+# Warn if output dir is split/ — proposals should go to proposals/ first
+OUT_DIR_NAME=$(basename "$OUT_DIR")
+if [ "$OUT_DIR_NAME" = "split" ]; then
+  PROP_DIR="$(dirname "$OUT_DIR")/proposals"
+  echo "WARNING: Writing auto-proposals to split/ is deprecated." >&2
+  echo "         Use a proposals/ directory instead (e.g. $PROP_DIR)." >&2
+  echo "         Proposals in split/ will be compiled as real segments." >&2
+  echo "" >&2
+fi
+
 # Parse optional --src-dir argument
 if [ "$MODE" = "--src-dir" ]; then
   SRC_DIR="$4"

@@ -8,9 +8,9 @@ stacks, delegation boundaries, compound rules, and cross-domain code.
 
 | Trigger | Mode | Behavior |
 |---------|------|----------|
-| `/check-bl <path>` | Explicit | Audit a specific file or module |
-| `/check-bl` (in PR context) | Explicit | Audit files changed in the current diff |
-| Agent detects new endpoint during session | Auto-suggest | "I see a new refund endpoint. Run /check-bl against it?" |
+| `audit <path>` | Explicit | Audit a specific file or module |
+| `audit` (in PR context) | Explicit | Audit files changed in the current diff |
+| Agent detects new endpoint during session | Auto-suggest | "I see a new refund endpoint. Run audit against it?" |
 
 Rule Druid is always read-only — it never creates or modifies entries in
 LOGIC.md.
@@ -209,6 +209,6 @@ Actionable suggestions:
 | State | Druid response |
 |-------|---------------|
 | File doesn't exist | `❌ File not found at path. Verify the path and retry.` |
-| No matching domain | `📋 No business rules found for this domain. Add rules via /scan-bl or discussion.` |
+| No matching domain | `📋 No business rules found for this domain. Add rules via scan or discussion.` |
 | All rules satisfied | `✅ All 5 rules in the billing domain are enforced.` |
 | Scanned file delegates entirely | `🟡 All enforcement is delegated. Consider mapping called functions in the rule manifest for verification.` |

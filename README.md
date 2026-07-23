@@ -56,7 +56,7 @@ Conversation-only rules are stored as **proposed** — developer intent, tracked
 
 **The Problem**. You documented a rule six months ago. Since then, the team changed the threshold, removed the validation, or added a new exception. Nobody updated the doc. Now the doc and the code disagree — and neither the humans nor the agent knows which is correct.
 
-**The Fix** is `/validate-bl`. It cross-references every active rule against the actual codebase:
+**The Fix** is `validate`. It cross-references every active rule against the actual codebase:
 
 | Check | What it detects |
 |-------|----------------|
@@ -73,32 +73,98 @@ Conversation-only rules are stored as **proposed** — developer intent, tracked
 
 **The Problem**. A developer refactors a validation function. The tests pass. The code compiles. But an implicit business rule — "manager approval is required for refunds over $500" — was being enforced by a conditional that the refactor removed. Nobody catches it until prod.
 
-**The Fix** is the **Rule Druid** (`/check-bl`) — a context-aware compliance auditor. Unlike naive keyword matching, the Druid understands:
+**The Fix** is the **Rule Druid** (`audit`) — a context-aware compliance auditor. Unlike naive keyword matching, the Druid understands:
 - **Middleware stacks** — auth rules enforced at router level
 - **Delegation boundaries** — opaque calls to validation functions
 - **Compound rules** — rules with multiple invariants (partial enforcement detection)
 - **Cross-domain code** — code that touches multiple business domains
 
-For full PR reviews, `/review-pr` runs the entire arsenal against a branch diff: compliance check, new rule detection, cross-reference (contradiction/drift/gap), and suggestions.
+For full PR reviews, `review-pr` runs the entire arsenal against a branch diff: compliance check, new rule detection, cross-reference (contradiction/drift/gap), and suggestions.
 
 ---
 
-## Reference
+## Evaluation Layers
+
+The skill has three autonomous evaluation layers that run without manual commands:
+
+### Layer 1: Deterministic Grade Layer (every write)
+
+After every segment write or proposal accept:
+
+```
+frontmatter schema validation  (id format, required fields, types)
+fingerprint cross-reference     (no dupes across segments)
+source_refs reconciliation      (count vs actual Code: entries)
+weak fingerprint detection      (stale -ref suffix)
+INDEX / FINGERPRINTS / SOURCE_MAP / COMPILER_REPORT rebuild
+```
+
+Errors block the write. Warnings are logged but don't block. `--fix` auto-correction (rename malformed files, correct counts, strip suffixes) runs automatically.
+
+### Layer 2: Hill-Climb Loop (background)
+
+When gap count is persistently high or `re-scan` is triggered, the skill auto-iterates:
+
+```
+scan → propose → accept → compile → re-measure → repeat until plateau at 0 gaps
+```
+
+Only high-confidence signals are auto-proposed. Anything below threshold waits for the approval flow (`review` → `approve`).
+
+### Layer 3: Meta-Analysis (periodic)
+
+Every N operations (default 3), the skill self-evaluates:
+
+- ⏱ Duration outliers — ops significantly slower than their mean
+- 0️⃣ Zero-delta ops — operations that resolved no gaps
+- 📈 Gap resolution velocity — efficient batch processing
+- ❌ Failure clusters — same op failing repeatedly
+- 🔁 Repetitive tool chains — sequences that repeat and could be scripted
+
+Actionable suggestions are presented to the user.
+
+## How to Use the Skill
+
+### Philosophy
+
+The skill is **autonomous by default, explicit on demand**. Most behaviors (compile, consolidate, gap-fill, meta-analysis) happen without commands. You only need commands to **direct attention** (scan) or **gatekeep** (approve, audit).
 
 ### Commands
 
-| Command | Action |
-|---------|--------|
-| `/sync-bl` | Full scan: git log since last sync + all specs + all tests → diff against LOGIC.md |
-| `/validate-bl` | Cross-reference LOGIC.md against codebase, surface contradictions, drift, and traceability gaps |
-| `/review-bl` | Present PENDING.md for batch review |
-| `/scan-bl <path>` | Scan file, module, or PR diff for potential business rules — interactive |
-| `/scan-bulk <path>` | Bulk scan a codebase path with pre-flight estimation, configurable skip options, and automatic segment generation — non-interactive per-candidate |
-| `/check-bl <path>` | Rule Druid — audit new/modified code against active business rules |
-| `/review-pr` | Peer review of a pull request branch — 4-pass review (compliance, detection, cross-ref, suggestions) |
-| `/reset-bl-skip` | Clear the skip cache (re-suggest previously rejected patterns) |
-| `/history-bl` | Load CHANGELOG.md (never auto-loaded without this) |
-| `/archive-bl` | Move deprecated rules to archive, regenerate INDEX.md + RELATIONS.md |
+Old names (e.g. `/scan-bl`, `/check-bl`) still work as backward-compatible aliases.
+
+| Command | Tier | What |
+|---------|------|------|
+| `scan <path>` | Daily | Scan file/module for rule signals — interactive (y/n per candidate) |
+| `re-scan` | Daily | Auto-gap-fill: detect changes → propose → consolidate → compile |
+| `review` | Daily | Show pending items for approval |
+| `approve [--all]` | Daily | Accept proposals (consolidates by domain) |
+| `audit <path>` | Daily | Check code against active business rules |
+| `validate` | Periodic | Cross-reference rules vs codebase, find drift |
+| `history` | Periodic | Load changelog |
+| `archive <id>` | Periodic | Deprecate → move to archive |
+| `coverage` | Periodic | Source coverage heat map |
+| `review-pr` | Periodic | 4-pass PR review |
+| `scan-from-registry` | Rare | Cross-language pattern scan |
+| `hill-climb` | Rare | Manual iterative gap fill |
+
+### Common Workflows
+
+```
+"I just wrote code — did I follow the rules?"
+  → audit src/my-file.ts
+
+"I'm about to commit — did I miss anything?"
+  → re-scan                         (auto-fills gaps + compiles)
+
+"End of sprint — make sure everything is documented"
+  → re-scan                         (auto-fills all gaps)
+  → validate                        (cross-reference vs codebase)
+
+"Some rules feel stale or wrong"
+  → validate                        (drift detection)
+  → review                          (pending items)
+```
 
 ### Architecture
 

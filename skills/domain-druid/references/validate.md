@@ -42,7 +42,7 @@ Triggered for: contradictions, breaking changes, ambiguous logic, drift.
 
 ## Batch Validation (Routine)
 
-Accumulates proposals in PENDING.md. Reviewed via `/review-bl`.
+Accumulates proposals in PENDING.md. Reviewed via `review`.
 
 ### PENDING.md format
 
@@ -76,7 +76,7 @@ Generated: 2026-06-20 14:30 UTC (3 proposals)
 [Full replacement entry + status change for old entry]
 ```
 
-### Review flow (`/review-bl`)
+### Review flow (`review`)
 
 ```
 1. Load PENDING.md
@@ -100,7 +100,7 @@ After any update to LOGIC.md:
 4. **Update CHANGELOG.md** — log what changed and why
 5. **Clear applied proposals** from PENDING.md
 
-## Drift Detection (`/validate-bl`)
+## Drift Detection (`validate`)
 
 Cross-references LOGIC.md against the current codebase.
 
@@ -148,7 +148,7 @@ values across layers:
 ### Output
 
 ```
-/validate-bl results:
+validate results:
 
 ✅ 12 rules verified (code matches doc)
 ⚠️ 2 drifts found:

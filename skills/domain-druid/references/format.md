@@ -109,7 +109,7 @@ if subtotal > 100 {
 ```
 
 The auto-detector scans for existing `BL-RULE-NNN` annotations in code during
-detection. The `/validate-bl` check verifies every active Trace ID has at least
+detection. The `validate` check verifies every active Trace ID has at least
 one matching annotation in the codebase (and vice versa for orphan annotations).
 
 Format: `BL-RULE-NNN`, `BL-DEF-NNN`, `BL-DEC-NNN`, `BL-LIM-NNN` depending on
@@ -221,7 +221,7 @@ Layer labels are flexible — match the project's architecture:
 | Worker | Background job, queue processor |
 | API Gateway | Middleware, rate limiting, auth |
 
-Each enforcement point is checked during `/validate-bl` and `/check-bl` for:
+Each enforcement point is checked during `validate` and `audit` for:
 - File still exists (no stale references)
 - Line range still contains matching logic (no drift)
 - Code annotation matches (backward trace)
@@ -260,7 +260,7 @@ Origin Types:
 | Spec | A PRD or specification document |
 | Test | A test that encoded an implicit rule |
 | Code Analysis | Found during code review or refactoring |
-| Scan | Found via explicit `/scan-bl` |
+| Scan | Found via explicit `scan` |
 
 Multiple origins per entry — repeat the block:
 

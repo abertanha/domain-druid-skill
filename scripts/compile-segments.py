@@ -42,14 +42,18 @@ def parse_frontmatter(content):
     """Extract YAML frontmatter from markdown content."""
     if not content.startswith("---"):
         return None, content
-    parts = content.split("---", 2)
-    if len(parts) < 3:
+    end_idx = content.find("\n---", 3)
+    if end_idx == -1:
         return None, content
+    fm_text = content[3:end_idx]
+    rest = content[end_idx + 4:].strip()
+    if not fm_text.strip():
+        return {}, rest
     try:
-        fm = yaml.safe_load(parts[1])
+        fm = yaml.safe_load(fm_text)
     except yaml.YAMLError:
         return None, content
-    return fm or {}, parts[2].strip()
+    return fm or {}, rest
 
 def parse_entries(content):
     """Parse inline entries from core format (## Title + - Type: blocks)."""
@@ -84,6 +88,10 @@ def parse_entries(content):
                 code_m = re.search(r"`([^`]+\.(ts|tsx|js|jsx|py|rs)[^`]*)`", line)
                 if code_m:
                     code_refs.append(code_m.group(1))
+                else:
+                    code_m2 = re.search(r'[-:]\s+([a-zA-Z0-9_/.-]+\.(ts|tsx|js|jsx|py|rs)(?::\d[\d,-]*)?)', line)
+                    if code_m2:
+                        code_refs.append(code_m2.group(1))
 
         if title or entry_type:
             entries.append({
@@ -146,6 +154,133 @@ def check_fingerprint_refs(fm, all_fingerprints):
     for fp in fm.get("fingerprints", []):
         if fp not in known:
             issues.append(f"FINGERPRINT '{fp}' referenced but not in FINGERPRINTS.md")
+    return issues
+
+# ── Fixers (--fix) ──────────────────────────────────────────────────────
+
+def find_max_nn(split_dir):
+    """Find the highest NN prefix among existing segment files."""
+    max_nn = 0
+    for f in split_dir.glob("*.md"):
+        m = re.match(r"^(\d{2,})", f.name)
+        if m:
+            nn = int(m.group(1))
+            if nn > max_nn:
+                max_nn = nn
+    return max_nn
+
+def fix_naming_convention(split_dir, fpath, fm, max_nn):
+    """Rename file to NN-name pattern if needed. Returns new Path or None."""
+    name = fpath.name
+    if re.match(r"^\d{2,}[a-z]?[-]", name):
+        return None
+    if name.startswith("SEGMENTS") or name.startswith("INDEX"):
+        return None
+
+    base = name
+    for prefix in ["new-", "auto-"]:
+        if base.startswith(prefix):
+            base = base[len(prefix):]
+            break
+    base = base.replace(".md", "")
+    new_nn = max_nn + 1
+    new_name = f"{new_nn:02d}-{base}.md"
+    new_path = split_dir / new_name
+
+    new_id = base.replace("_", "-").replace(" ", "-").lower()
+    content = new_path.read_text(encoding="utf-8") if new_path.exists() else fpath.read_text(encoding="utf-8")
+    if new_path.exists():
+        return None  # target exists, skip
+    fpath.rename(new_path)
+    content = re.sub(r"^id:\s*.*$", f"id: {new_id}", content, count=1, flags=re.MULTILINE)
+    new_path.write_text(content, encoding="utf-8")
+    return new_path
+
+def fix_source_refs(fpath, entries):
+    """Rewrite source_refs in frontmatter to match actual count."""
+    actual_refs = set()
+    for entry in entries:
+        for ref in entry.get("code_refs", []):
+            actual_refs.add(ref.strip())
+    actual = len(actual_refs)
+
+    content = fpath.read_text(encoding="utf-8")
+    m = re.search(r"^source_refs:\s*(\d+)", content, re.MULTILINE)
+    if not m:
+        return False
+    declared = int(m.group(1))
+    if declared == actual:
+        return False
+    content = re.sub(
+        r"^source_refs:\s*\d+",
+        f"source_refs: {actual}",
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    fpath.write_text(content, encoding="utf-8")
+    return True
+
+def fix_weak_fingerprints(fpath, fm, entries):
+    """Strip -ref suffix from all fingerprints."""
+    changed = False
+    content = fpath.read_text(encoding="utf-8")
+
+    # Entry-level fingerprints
+    for entry in entries:
+        fp = entry.get("fingerprint", "")
+        if fp.endswith("-ref"):
+            fixed = fp[:-4]
+            content = content.replace(f"- Fingerprint: {fp}", f"- Fingerprint: {fixed}")
+            changed = True
+
+    # Frontmatter-level fingerprints
+    for fp in fm.get("fingerprints", []):
+        if fp.endswith("-ref"):
+            fixed = fp[:-4]
+            content = content.replace(f"  - {fp}", f"  - {fixed}")
+            content = content.replace(f"\n- {fp}", f"\n- {fixed}")
+            changed = True
+
+    if changed:
+        fpath.write_text(content, encoding="utf-8")
+    return changed
+
+def check_naming_convention(filename, fm):
+    """Warn if segment filename doesn't follow NN-name pattern."""
+    issues = []
+    if not re.match(r'^\d{2,}[a-z]?[-]', filename):
+        if filename.startswith("auto-") or filename.startswith("new-"):
+            issues.append(f"FILENAME '{filename}' uses '{filename.split('-')[0]}-' prefix — rename to NN-name pattern (e.g. '14-interfaces')")
+        elif filename.startswith("SEGMENTS") or filename.startswith("INDEX"):
+            pass
+        else:
+            issues.append(f"FILENAME '{filename}' doesn't follow NN-name pattern")
+    return issues
+
+def reconcile_source_refs(filename, fm, entries):
+    """Warn if frontmatter source_refs doesn't match actual code ref count."""
+    issues = []
+    actual_refs = set()
+    for entry in entries:
+        for ref in entry.get("code_refs", []):
+            actual_refs.add(ref.strip())
+    declared = fm.get("source_refs", 0)
+    actual = len(actual_refs)
+    if declared != actual:
+        issues.append(f"SOURCE_REFS mismatch: frontmatter says {declared}, but body has {actual} unique ref(s)")
+    return issues
+
+def check_weak_fingerprints(filename, fm, entries):
+    """Warn if fingerprints look auto-generated (weak dedup value)."""
+    issues = []
+    for entry in entries:
+        fp = entry.get("fingerprint", "")
+        if fp.endswith("-ref"):
+            issues.append(f"WEAK FINGERPRINT '{fp}' in entry '{entry.get('title', '?')}' — '-ref' suffix is auto-generated, use a meaningful fingerprint")
+    for fp in fm.get("fingerprints", []):
+        if fp.endswith("-ref"):
+            issues.append(f"WEAK FINGERPRINT '{fp}' in frontmatter — '-ref' suffix is auto-generated, use a meaningful fingerprint")
     return issues
 
 # ── Index Builders ──────────────────────────────────────────────────────
@@ -283,6 +418,53 @@ def main():
     if not quiet:
         print(f"Compiling {len(md_files)} segments in {bl_root}...")
 
+    # ── Phase 1: Fix ────────────────────────────────────────────────
+    if do_fix:
+        max_nn = find_max_nn(split_dir)
+        fix_counts = {"renamed": 0, "refs_fixed": 0, "fps_fixed": 0}
+        for fpath in md_files:
+            content = fpath.read_text(encoding="utf-8")
+            has_frontmatter = content.startswith("---")
+            if not has_frontmatter:
+                continue
+            fm, rest = parse_frontmatter(content)
+            if not fm:
+                continue
+            entries = parse_entries(rest) + parse_table_entries(rest)
+
+            # 1. Fix naming convention
+            new_path = fix_naming_convention(split_dir, fpath, fm, max_nn)
+            if new_path:
+                fix_counts["renamed"] += 1
+                max_nn += 1
+                fpath = new_path
+                content = fpath.read_text(encoding="utf-8")
+                fm, rest = parse_frontmatter(content)
+                entries = parse_entries(rest) + parse_table_entries(rest)
+
+            # 2. Fix source_refs mismatch
+            if fix_source_refs(fpath, entries):
+                fix_counts["refs_fixed"] += 1
+                content = fpath.read_text(encoding="utf-8")
+                fm, rest = parse_frontmatter(content)
+                entries = parse_entries(rest) + parse_table_entries(rest)
+
+            # 3. Fix weak fingerprints
+            if fix_weak_fingerprints(fpath, fm, entries):
+                fix_counts["fps_fixed"] += 1
+                content = fpath.read_text(encoding="utf-8")
+                fm, rest = parse_frontmatter(content)
+                entries = parse_entries(rest) + parse_table_entries(rest)
+
+        if not quiet:
+            total = sum(fix_counts.values())
+            print(f"  Renamed: {fix_counts['renamed']}, source_refs: {fix_counts['refs_fixed']}, weak fps: {fix_counts['fps_fixed']} ({total} total fixes)")
+        # Re-read directory after renames
+        md_files = sorted(split_dir.glob("*.md"))
+        if not quiet:
+            print(f"\nRe-compiling {len(md_files)} segments after fixes...\n")
+
+    # ── Phase 2: Validate & Report ──────────────────────────────────
     segments = []
     all_issues = []
     all_fingerprints = set()
@@ -334,6 +516,27 @@ def main():
         # Check fingerprint cross-refs
         fp_issues = check_fingerprint_refs(fm, all_fingerprints)
         for iss in fp_issues:
+            all_issues.append({"file": fpath.name, "severity": "WARN", "message": iss})
+            if not quiet:
+                print(f"  WARN: {iss}")
+
+        # Check naming convention
+        naming_issues = check_naming_convention(fpath.name, fm)
+        for iss in naming_issues:
+            all_issues.append({"file": fpath.name, "severity": "WARN", "message": iss})
+            if not quiet:
+                print(f"  WARN: {iss}")
+
+        # Reconcile source_refs against actual code refs
+        refs_issues = reconcile_source_refs(fpath.name, fm, entries)
+        for iss in refs_issues:
+            all_issues.append({"file": fpath.name, "severity": "WARN", "message": iss})
+            if not quiet:
+                print(f"  WARN: {iss}")
+
+        # Check for weak fingerprints
+        weak_fp_issues = check_weak_fingerprints(fpath.name, fm, entries)
+        for iss in weak_fp_issues:
             all_issues.append({"file": fpath.name, "severity": "WARN", "message": iss})
             if not quiet:
                 print(f"  WARN: {iss}")

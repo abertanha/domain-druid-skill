@@ -70,7 +70,7 @@ if not re.match(r'^[\w-]+$', fm['id']):
 
 # ── Setup ──
 
-mkdir -p "$BL_DIR/.domain-druid" "$BL_DIR/split" "$BL_DIR/reviews"
+mkdir -p "$BL_DIR/.domain-druid" "$BL_DIR/split" "$BL_DIR/proposals" "$BL_DIR/reviews"
 
 if [ ! -f "$MANIFEST" ]; then
   bash "$SCRIPT_DIR/generate-manifest.sh" "$SRC_DIR" "$MANIFEST"
@@ -138,12 +138,12 @@ while [ $ITER -lt $MAX_ITER ]; do
   } > "$GAP_TMP"
 
   BEFORE=$(mktemp)
-  ls "$BL_DIR/split/"*.md 2>/dev/null > "$BEFORE" || true
+  ls "$BL_DIR/proposals/"*.md 2>/dev/null > "$BEFORE" || true
 
-  bash "$SCRIPT_DIR/propose-entries.sh" "$GAP_TMP" "$BL_DIR/split" --auto --src-dir "$SRC_DIR" 2>/dev/null || true
+  bash "$SCRIPT_DIR/propose-entries.sh" "$GAP_TMP" "$BL_DIR/proposals" --auto --src-dir "$SRC_DIR" 2>/dev/null || true
 
   AFTER=$(mktemp)
-  ls "$BL_DIR/split/"*.md 2>/dev/null > "$AFTER" || true
+  ls "$BL_DIR/proposals/"*.md 2>/dev/null > "$AFTER" || true
   NEW_SEGMENTS=$(comm -13 <(sort "$BEFORE") <(sort "$AFTER"))
 
   for SEG in $NEW_SEGMENTS; do
@@ -164,5 +164,8 @@ done
 CURRENT_GAPS=${GAPS:-0}
 echo ""
 echo "✅ Completed: ${INITIAL_GAPS} → ${CURRENT_GAPS} gaps in ${ITER} iteration(s)"
-echo "   ${ADDED} segment(s) integrated"
+echo "   ${ADDED} proposal(s) in proposals/"
 [ "$ROLLED" -gt 0 ] && echo "   🔶 ${ROLLED} rolled back (invalid frontmatter)"
+echo ""
+echo "Proposals are in $BL_DIR/proposals/. Review and accept with:"
+echo "  accept-proposals.sh $BL_DIR"

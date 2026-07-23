@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-META_DIR="${META_DIR:-$HOME/.config/opencode/skills/domain-druid/meta}"
+META_DIR="${META_DIR:-$(cd "$(dirname "$0")/.." && pwd)/meta}"
 ANALYSIS_LOG="$META_DIR/suggestions.md"
 THRESHOLD_FILE="$META_DIR/threshold"
 

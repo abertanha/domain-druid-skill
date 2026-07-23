@@ -261,6 +261,18 @@ def main():
 
     dry_run = "--dry-run" in args
     revert = "--revert" in args
+    clean = "--clean" in args
+
+    if clean:
+        bak_files = sorted(seg_dir.glob("*.bak"))
+        if not bak_files:
+            print(f"No .bak files found in {seg_dir}")
+        else:
+            print(f"Cleaning {len(bak_files)} .bak file(s) from {seg_dir}")
+            for bf in bak_files:
+                bf.unlink()
+                print(f"  REMOVED {bf.name}")
+        return
 
     md_files = sorted(seg_dir.glob("*.md"))
     print(f"Found {len(md_files)} segment files in {seg_dir}")

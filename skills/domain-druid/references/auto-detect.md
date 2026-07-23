@@ -4,7 +4,7 @@ The skill detects business logic changes from multiple signal sources.
 
 ## 1. Git Diff Analysis
 
-Runs when: session start (if .last-sync is stale) or on `/sync-bl`.
+Runs when: session start (if .last-sync is stale) or on `re-scan`.
 
 ### Scope
 
@@ -182,9 +182,9 @@ that come up in conversation or are explicitly read/edited during the session.
 
 ---
 
-## 6. Explicit Scan (`/scan-bl`)
+## 6. Explicit Scan (`scan`)
 
-Triggered by `/scan-bl <path>` command. Scans a file, module, or the full
+Triggered by `scan <path>` command. Scans a file, module, or the full
 source tree for potential business rules. Each candidate is presented to the
 user for interactive confirmation before anything is written.
 
@@ -192,10 +192,10 @@ user for interactive confirmation before anything is written.
 
 | Scope | Command | Behavior |
 |-------|---------|----------|
-| Single file | `/scan-bl src/domain/billing.rs` | Scan one file |
-| Module | `/scan-bl src/domain/` | Scan all files in directory (bounded to 10 results) |
-| Full tree | `/scan-bl` | Scan entire source tree (bounded to 15 results) |
-| PR diff | `/scan-bl` (in PR context) | Scan only the diff, not full tree |
+| Single file | `scan src/domain/billing.rs` | Scan one file |
+| Module | `scan src/domain/` | Scan all files in directory (bounded to 10 results) |
+| Full tree | `scan` | Scan entire source tree (bounded to 15 results) |
+| PR diff | `scan` (in PR context) | Scan only the diff, not full tree |
 
 ### Signal catalog
 
@@ -281,7 +281,7 @@ pattern in future scans:
 }
 ```
 
-Checked before presenting any candidate. User can clear with `/reset-bl-skip`.
+Checked before presenting any candidate. User can clear with skip cache.
 
 ---
 
@@ -356,7 +356,7 @@ Language-specific function patterns:
 |-------|------|-------------------|
 | **Detection** | After step 2, before fingerprint | Auto-correct line number if construct found nearby (±10 lines). If construct not found at all → flag with ⚠️. If file doesn't exist → block candidate. |
 | **Write** | When user confirms, before saving to LOGIC.md | Re-verify all Code entries. If stale → block write, ask user to confirm corrected location or remove. |
-| **Batch** | During `/validate-bl` | Re-verify all Code entries across all active rules. Flag stale entries with ❌. |
+| **Batch** | During `validate` | Re-verify all Code entries across all active rules. Flag stale entries with ❌. |
 
 ### Auto-correction logic
 

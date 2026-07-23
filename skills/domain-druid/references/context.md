@@ -15,8 +15,8 @@ logic at any time.
 | Concerns section | ~200t | **Always** | Every session |
 | LOGIC.md (if no split) | ≤1000t | **Always** | Every session |
 | Segment files (e.g. `split/01-billing.md`) | ≤1000t each | **On demand** — via SEGMENTS.md tag lookup | Per task |
-| RELATIONS.md | ~300t | **On demand** — `/validate-bl` or impact analysis | On command |
-| CHANGELOG.md | grows unbounded | **Never by default** — only via `/history-bl` | On command |
+| RELATIONS.md | ~300t | **On demand** — `validate` or impact analysis | On command |
+| CHANGELOG.md | grows unbounded | **Never by default** — only via `history` | On command |
 | Archive/ | grows unbounded | **Never** — only via explicit reference | On command |
 | `.last-sync` | ~10t | **As needed** — check timestamp during auto-detect | Every session start |
 
@@ -97,7 +97,7 @@ overdue reviews, traceability gaps).
 ### Rule 7: CHANGELOG.md is opt-in only
 
 The changelog grows unbounded over time. It is never auto-loaded. The user
-must explicitly request `/history-bl` to view it.
+must explicitly request `history` to view it.
 
 ### Rule 9: Archive is invisible
 

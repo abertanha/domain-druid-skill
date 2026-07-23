@@ -33,11 +33,12 @@ one subdirectory per repository. `<repo>` is the repository directory name
     │   ├── CHANGELOG.md
     │   ├── .domain-druid/
     │   │   └── manifest.json
-    │   ├── split/
-    │   │   ├── 01-domain-a.md
-    │   │   └── 02-domain-b.md
-    │   ├── archive/
-    │   └── reviews/
+│   ├── split/
+│   │   ├── 01-domain-a.md
+│   │   └── 02-domain-b.md
+│   ├── proposals/            ← auto-generated stubs (unverified, not compiled)
+│   ├── archive/
+│   └── reviews/
     └── repo2/
         ├── LOGIC.md
         ├── INDEX.md
@@ -90,8 +91,9 @@ description: Auth and roles rules for the AGX corporate domain
 ```
 
 Run `scripts/migrate-frontmatter.py <split-dir>` to add frontmatter to legacy segments.
-Run `scripts/compile-segments.py <bl-root> --rebuild` to regenerate INDEX.md,
-FINGERPRINTS.md, and SOURCE_MAP.md with 0-issue validation.
+Use `--clean` to remove `.bak` backup files after verifying the migration was successful.
+Compilation runs autonomously after every write. To trigger manually:
+`scripts/compile-segments.py <bl-root> --rebuild`.
 
 ## Trigger Modes
 
@@ -104,7 +106,7 @@ FINGERPRINTS.md, and SOURCE_MAP.md with 0-issue validation.
 | Code diff analyzed | Detects validation logic, new limits, changed behavior |
 | Bug fix described | Captures discovered invariants |
 | User explicitly states a rule | "Remember: X can never be Y" → classified and proposed |
-| Session end | Final diff of PENDING.md against LOGIC.md |
+| Session end | Final diff of PENDING.md against segments |
 
 ### Auto (git-based)
 
@@ -115,30 +117,118 @@ it runs a git log scan:
 - `git diff HEAD~5..HEAD` — analyzes recent changes for business logic signals
 - Updates `.last-sync` when done
 
-### Manual commands
+### Commands
+
+Old names still work as backward-compatible aliases.
+
+#### Scan
 
 | Command | Action |
 |---------|--------|
-| `/sync-bl` | Full scan: git log since last sync + all specs + all tests → diff against LOGIC.md |
-| `/validate-bl` | Cross-reference LOGIC.md against codebase, surface contradictions, drift, and traceability gaps |
-| `/review-bl` | Present PENDING.md for batch review |
-| `/scan-bl <path>` | Scan file, module, or PR diff for potential business rules — presents candidates interactively for confirm/edit/reject |
-| `/reset-bl-skip` | Clear the skip cache (re-suggest previously rejected patterns) |
-| `/check-bl <path>` | Audit new/modified code against active business rules. Context-aware: understands middleware, delegation, compound rules (see [references/rule-druid.md](references/rule-druid.md)). |
-| `/review-pr` | Peer review of a pull request: compliance check, new rule detection, cross-reference, and suggestions (see [references/review-pr.md](references/review-pr.md)). |
-| `/history-bl` | Load CHANGELOG.md (never auto-loaded; must be explicit) |
-| `/archive-bl` | Move deprecated rules to archive, regenerate INDEX.md + RELATIONS.md |
-| `/gap-scan [--quick]` | Scan source for undocumented rule signals with auto cross-referencing (✅ mapped vs 🆕 new). Uses `scripts/detect-gaps.sh`. Phase 4 compares findings against segment Code: entries. |
-| `/gap-scan --propose [--auto]` | After scan, generate draft segment entries from 🆕 findings. Default `--review` (y/n per candidate). `--auto` writes directly. Uses `scripts/propose-entries.sh`. |
-| `/verify-work` | Post-implementation check: manifest diff + path matching. Detects changed files not referenced in any segment. Uses `scripts/verify-work.py`. |
-| `/verify-work-pending` | `/verify-work` + auto-writes undocumented files to PENDING.md as structured pending entries with inferred type/fingerprint/tags. Entry format: `### Pending: <path>` with discovered date, type, fingerprint, tags, and status. Dedup by path. Uses `--write-pending` flag on `verify-work.py`. |
-| `/rebuild-fingerprints` | Rebuild FINGERPRINTS.md from all segment files. Uses `scripts/rebuild-fingerprints.sh`. Run after adding/moving segments. |
-| `/compile-bl [--rebuild]` | Validate frontmatter schema, cross-reference fingerprints, regenerate INDEX.md, FINGERPRINTS.md, SOURCE_MAP.md, and COMPILER_REPORT.md. Uses `scripts/compile-segments.py`. |
-| `/merge-parallel` | Merge and deduplicate parallel scan reports. Uses `scripts/merge-parallel-results.sh`. |
-| `/coverage` | Map source directories against documented segments. Shows coverage % per directory and flags uncovered areas. See [references/coverage.md](references/coverage.md). |
-| `/scan-from-registry <src> --patterns-dir <dir>` | Technology-agnostic scan using pattern registry YAML files. Supports `--quick` mode. Uses `scripts/scan-from-registry.py`. |
-| `/hill-climb <src> <bl> <patterns> [--target N] [--max-iter N] [--quick]` | Auto-integrate high-confidence signals iteratively until plateau or target coverage. Uses `scripts/hill-climb.sh`. |
-| `/meta-suggest [--threshold N]` | Analyze skill operation history, detect patterns, and suggest improvements. Uses `scripts/meta-suggest.sh`. |
+| `scan <path>` | Scan a file, module, or diff for business rule signals. Interactive — presents candidates one at a time for confirm/edit/reject. Writes approved entries to PENDING.md. (Old alias: `/scan-bl <path>`) |
+| `re-scan` | Autonomous re-scan — detects changes since last scan, auto-proposes high-confidence entries, consolidates by domain, compiles with `--fix --rebuild`. Presents summary only, no interactive loop. |
+
+#### Approval
+
+| Command | Action |
+|---------|--------|
+| `review` | Show PENDING.md for batch review. (Old alias: `/review-bl`) |
+| `approve [--all]` | Accept proposals from `proposals/` into `split/`. `--all` consolidates by domain (merges entries, deduplicates by fingerprint, sub-splits by token budget). (Old alias: `/accept-proposals`) |
+
+#### Validation
+
+| Command | Action |
+|---------|--------|
+| `audit <path>` | Rule Druid — check code against active business rules. Understands middleware stacks, delegation boundaries, compound rules. (Old alias: `/check-bl <path>`) |
+| `validate` | Cross-reference rules against codebase: forward/backward traceability, drift, contradictions, stale entries. (Old alias: `/validate-bl`) |
+
+#### Support
+
+| Command | Action |
+|---------|--------|
+| `history` | Load CHANGELOG.md. (Old alias: `/history-bl`) |
+| `archive <id>` | Deprecate a rule and move it to archive/, regenerate INDEX.md. (Old alias: `/archive-bl`) |
+| `coverage` | Map source directories against documented segments. Shows coverage % per directory, flags uncovered areas. |
+| `review-pr` | Peer review of a PR branch — 4-pass review: compliance, detection, cross-ref, suggestions. |
+
+#### Specialized (rarely used directly)
+
+| Command | Action |
+|---------|--------|
+| `scan-from-registry <src> --patterns-dir <dir>` | Technology-agnostic scan using pattern registry YAML files. For cross-language or custom patterns. (Old alias: `/scan-from-registry`) |
+| `hill-climb <src> <bl> <patterns>` | Auto-iterate to fill all gaps — runs `scan → propose → accept → compile` until plateau. Normally invoked by `re-scan` or autonomous background, but can be triggered manually. |
+
+## Autonomous Behaviors
+
+These run without a manual command. The skill self-evaluates and self-improves.
+
+### Grade Layer (compilation)
+
+After every segment write or proposal accept, the skill automatically runs:
+
+```
+validate frontmatter schema (id format, required fields, types)
+cross-reference fingerprints against FINGERPRINTS.md
+reconcile source_refs count vs actual Code: entries
+detect weak fingerprint -ref suffix
+rebuild INDEX.md, FINGERPRINTS.md, SOURCE_MAP.md
+write COMPILER_REPORT.md
+```
+
+Errors block the write. Warnings are logged to COMPILER_REPORT.md but don't block. The `--fix` auto-correction (rename `auto-*` files, correct `source_refs`, strip `-ref` suffix) runs automatically when applicable.
+
+### Proposals → Consolidation
+
+When proposals are accepted (`approve --all`), the skill groups them by `domain:` frontmatter field, merges entries, deduplicates by fingerprint, sub-splits at 1000 tokens, and counts `source_refs` from actual code refs. No manual staging steps needed.
+
+### Auto-Sync
+
+At session start, if `.last-sync` is stale (>1 hour), the skill runs a git log scan (`HEAD~5..HEAD`) for recent changes and updates `.last-sync`. No command needed.
+
+### Hill-Climb (background)
+
+If gap count is persistently high or the user runs `re-scan`, the skill may run hill-climb iterations in background: scan → propose → accept → compile → re-measure → repeat until plateau at 0 gaps. Only high-confidence signals are auto-proposed; anything below a threshold waits for `Approval` flow.
+
+### Meta-Analysis
+
+Every operation is logged to `meta/operations.ndjson`. Every N operations (default 3), the skill self-analyzes for patterns: duration outliers, zero-delta ops, failure clusters, repetitive tool chains. If actionable suggestions are found, the skill presents them. (Old `/meta-suggest` command still available as manual trigger.)
+
+## Common Workflows
+
+### "I just wrote code — did I follow our rules?"
+```
+audit src/my-file.ts   → compliance report per rule
+```
+
+### "I'm about to commit — did I miss anything?"
+```
+re-scan                 → auto-gap-fill + compile (summary only)
+```
+
+### "I want to explicitly scan a new module for rules"
+```
+scan src/services/      → interactive candidates (y/n/edit per rule)
+review                  → see what's pending
+approve --all           → accept and consolidate
+```
+
+### "End of sprint — make sure everything is documented"
+```
+re-scan                 → auto-detects, proposes, consolidates, compiles
+review                  → review any remaining low-confidence proposals
+validate                → cross-reference rules vs codebase
+```
+
+### "Some rules feel stale or wrong"
+```
+validate                → drift detection
+review                  → review flagged items
+```
+
+### "A rule is no longer relevant"
+```
+archive billing-rule-02 → move to archive/, regenerate index
+```
 
 ## Scan & Suggest
 
@@ -149,9 +239,9 @@ goes through an interactive confirmation loop before anything is written.
 
 | Trigger | Mode | Behavior |
 |---------|------|----------|
-| `/scan-bl <path>` | Explicit | Scan file, module, or full repo. Present candidates one at a time. |
+| `scan <path>` | Explicit | Scan file, module, or full repo. Present candidates one at a time. |
 | Agent reads code during session | Auto | Scan file on read. If patterns found, present immediately. |
-| Git diff at session start | Auto | Queue candidates for batch review on first `/review-bl`. |
+| Git diff at session start | Auto | Queue candidates for batch review on first `review`. |
 
 ### What it looks for
 
@@ -203,9 +293,9 @@ code.
 
 | Trigger | Mode | Behavior |
 |---------|------|----------|
-| `/check-bl <path>` | Explicit | Audit a specific file or module |
-| `/check-bl` (in PR context) | Explicit | Audit files changed in the current diff |
-| Agent detects new endpoint during session | Auto-suggest | "I see a new refund endpoint. Run /check-bl?" |
+| `audit <path>` | Explicit | Audit a specific file or module |
+| `audit` (in PR context) | Explicit | Audit files changed in the current diff |
+| Agent detects new endpoint during session | Auto-suggest | "I see a new refund endpoint. Run audit?" |
 
 ### Algorithm overview
 
@@ -267,22 +357,22 @@ High-level rules:
 5. **Concerns** (footer of LOGIC.md or standalone) → always loaded (~200t)
 6. **Segment files** (e.g. `split/01-billing.md`) → on demand, driven by SEGMENTS.md tag lookup
 7. **LOGIC.md** (if no split) → always loaded (≤1000t)
-8. **RELATIONS.md** → only on `/validate-bl` or impact analysis
-9. **CHANGELOG.md** → only on `/history-bl`
+8. **RELATIONS.md** → only on `validate` or impact analysis
+9. **CHANGELOG.md** → only on `history`
 10. **Archive/** → never loaded unless explicitly referenced
-11. **`references/coverage.md`** → only on `/coverage` (~200t)
-12. **`scripts/detect-gaps.sh`** → only on `/gap-scan` (~300t)
-13. **`scripts/propose-entries.sh`** → only on `/gap-scan --propose` (~200t)
-14. **`scripts/verify-work.py`** → only on `/verify-work` or `/verify-work-pending` (~200t)
-15. **`scripts/compile-segments.py`** → only on `/compile-bl` (~200t)
-16. **`scripts/scan-from-registry.py`** → only on `/scan-from-registry` (~200t)
-17. **`scripts/rebuild-fingerprints.sh`** → only on `/rebuild-fingerprints` (~150t)
-18. **`scripts/merge-parallel-results.sh`** → only on `/merge-parallel` (~200t)
+11. **Coverage** → generated on demand via `coverage` command (~200t)
+12. **`scripts/detect-gaps.sh`** → only on scan/re-scan (~300t)
+13. **`scripts/propose-entries.sh`** → only on scan/re-scan (~200t)
+14. **`scripts/verify-work.py`** → only on verify or re-scan (~200t)
+15. **`scripts/compile-segments.py`** → autonomous after every write (~200t)
+16. **`scripts/scan-from-registry.py`** → only on scan-from-registry (~200t)
+17. **`scripts/rebuild-fingerprints.sh`** → autonomous on compile (~150t)
+18. **`scripts/merge-parallel-results.sh`** → autonomous on multi-scan (~200t)
 19. **`patterns/*.yaml`** → only on tech-agnostic scan (~200t)
-20. **`COMPILER_REPORT.md`** → only on `/compile-bl` (~100t)
+20. **`COMPILER_REPORT.md`** → autonomous after every write (~100t)
 21. **`scripts/meta-record.sh`** → after each operation (~100t)
-22. **`scripts/meta-analyze.sh`** → every N operations or on `/meta-suggest` (~200t)
-23. **`scripts/meta-suggest.sh`** → only on `/meta-suggest` (~50t)
+22. **`scripts/meta-analyze.sh`** → every N operations or on meta (~200t)
+23. **`scripts/meta-suggest.sh`** → only on meta (~50t)
 
 Total active budget: **≤2000 tokens** of business logic at any time.
 
@@ -366,7 +456,7 @@ The recommended option is always the one that balances these three.
 DETECT → ANALYZE → VERIFY → FINGERPRINT → DEDUP → PRESENT → Confirm/Edit → PROPOSE
 ```
 
-1. **DETECT** — raw delta from any trigger (git diff, conversation, spec, test, `/scan-bl`)
+1. **DETECT** — raw delta from any trigger (git diff, conversation, spec, test, `scan`)
 2. **ANALYZE** — extract business logic implications (see [references/analyze.md](references/analyze.md))
 3. **VERIFY** — run deterministic source verification on all Code entries:
    file exists, line is valid, function and construct match (see [references/auto-detect.md](references/auto-detect.md) — section 8)
@@ -383,7 +473,7 @@ See [references/validate.md](references/validate.md) for detailed flows.
 
 - **Inline** — critical contradictions, breaking changes, ambiguous logic → ask immediately
 - **Batch** — routine additions, clarifications, extensions → accumulate in PENDING.md
-- **Drift detection** — `/validate-bl` cross-references LOGIC.md against actual code
+- **Drift detection** — `validate` cross-references LOGIC.md against actual code
 
 ### 3. Apply — Token-Budget-Gated
 
@@ -462,62 +552,59 @@ Output goes to both chat and `.business-logic/<repo>/reviews/YYYY-MM-DD_<branch>
 The `reviews/` directory is auto-created on first execution.
 
 New rules found during Pass 2 are proposed to PENDING.md via the standard
-Ingestion Loop (y/n/edit per candidate), exactly like `/scan-bl`.
+Ingestion Loop (y/n/edit per candidate), exactly like `scan`.
 
-## Scaling Improvements (Large Codebases)
+## Large Codebases (500+ files)
 
-These commands help the skill operate on repos with 500+ source files and 30+ segments.
+These scripts power the autonomous behaviors. The skill invokes them internally — you don't need to call them manually.
 
-| Command | Script | Purpose |
-|---------|--------|---------|
-| `/gap-scan` | `scripts/detect-gaps.sh` | Scans source for rule signals with Phase 4 cross-referencing against existing Code: entries. Supports `--quick`, `--patterns-dir`, `--verify`, `--verify-work`, `--verify-work-pending`. |
-| `/gap-scan --propose [--auto]` | `scripts/propose-entries.sh` | Generates draft segment entries from 🆕 gap findings. `--review` (default) shows y/n per candidate. `--auto` writes directly to segment files. |
-| `/verify-work-pending` | `scripts/verify-work.py --write-pending` | Post-implementation check + auto-write gaps to PENDING.md with inferred type/fingerprint/tags. Dedup by path. |
-| `/compile-bl [--rebuild]` | `scripts/compile-segments.py` | Validates frontmatter schema, cross-references fingerprints, auto-generates INDEX.md, FINGERPRINTS.md, SOURCE_MAP.md. Exit 0 = 0 issues. |
-| `/scan-from-registry` | `scripts/scan-from-registry.py` | Technology-agnostic scan using pattern registry (patterns/*.yaml). Supports `--quick` and `--patterns-dir`. |
-| `/rebuild-fingerprints` | `scripts/rebuild-fingerprints.sh` | Rebuilds FINGERPRINTS.md by parsing all segment files. Run after adding/moving segments to keep fingerprints in sync. |
-| `/merge-parallel` | `scripts/merge-parallel-results.sh` | Merges and deduplicates outputs from parallel scan subagents. Ranks findings by signal strength (Rules.ts > middleware > enums > constants). |
-| `/coverage` | manual (see references) | Maps source directories against documented segments. Uses `tree` for directory structure, then computes coverage % per directory. |
-| `/hill-climb` | `scripts/hill-climb.sh` | Auto-integrate high-confidence (🔴) signals iteratively until plateau or target coverage. Per-iteration: scan → extract high-conf gaps → propose → validate frontmatter → rollback on failure → rebuild → re-measure. |
-| `/meta-suggest` | `scripts/meta-suggest.sh` | Analyze skill operation history, detect patterns (duration, zero-delta, failures, tool chain repetition), and suggest improvements. |
+| Script | Purpose | When |
+|--------|---------|------|
+| `scripts/detect-gaps.sh` | Scan source for rule signals, cross-ref against Code: entries | On scan / re-scan |
+| `scripts/propose-entries.sh` | Generate draft segment entries from 🆕 gaps | After gap detection |
+| `scripts/accept-proposals.sh` + `consolidate-proposals.py` | Stage proposals into split/ with domain-grouped merge | On approve |
+| `scripts/verify-work.py` | Post-implementation check: path matching | On re-scan |
+| `scripts/compile-segments.py` | Validate frontmatter, rebuild indexes | After every write |
+| `scripts/scan-from-registry.py` | Technology-agnostic pattern scanning | On scan-from-registry |
+| `scripts/rebuild-fingerprints.sh` | Rebuild FINGERPRINTS.md from segments | On compile |
+| `scripts/merge-parallel-results.sh` | Merge parallel scan reports | Autonomous on multi-scan |
+| `scripts/hill-climb.sh` | Iterative gap-fill until plateau | Autonomous background |
+| `scripts/meta-suggest.sh` | Analyze operation history for patterns | Periodic autonomous |
 
 ### Gap Detection Pipeline
 
 ```
-/gap-scan
+scan / re-scan
   └── detect-gaps.sh ──→ Phase 1-3: scan for signals
                       └── Phase 4: cross-ref against known Code: entries
                            ├── ✅ mapped (file already referenced)
                            └── 🆕 new (no segment references this file)
                                 │
-/gap-scan --propose        ←───┘
+auto-propose              ←───┘
   └── propose-entries.sh ──→ generate draft segment entries
-                           ├── --review (y/n per candidate)
-                           └── --auto (write directly)
+                           ├── interactive (on scan)
+                           └── auto (on re-scan)
 ```
 
-### Self-Verification Loop (Post-Implementation)
+### Self-Verification Loop
 
 ```
-/verify-work-pending
-  └── verify-work.py --write-pending
-       ├── exit 0 → ✅ all changes covered → commit
+re-scan
+  └── verify-work.py (auto)
+       ├── exit 0 → ✅ all changes covered → compile
        └── exit 1 → 🔶 undocumented files found
             │
-            ├── for each gap file:
-            │   infer type/domain/fingerprint/tags from path
-            │   write structured entry to PENDING.md
-            │   dedup by path (skip if already pending)
+            ├── detect → propose → consolidate → compile
+            │   (internal, no user interaction)
             │
-            └── agent reviews PENDING.md:
-                 for each entry → integrate into segment
-                 → /verify-work (re-verify) → exit 0 → commit
+            └── present summary: "N files re-scanned,
+                 M proposals consolidated, 0 issues"
 ```
 
 ### Technology-Agnostic Scanning
 
 ```
-/scan-from-registry <src> <pattern-dir> --patterns-dir <dir>
+scan-from-registry <src> <pattern-dir> --patterns-dir <dir>
   └── scan-from-registry.py
        ├── Loads pattern YAML files from patterns/
        │   (generic, typescript, react, redux, backend)
@@ -526,28 +613,26 @@ These commands help the skill operate on repos with 500+ source files and 30+ se
        └── Outputs: ✅ mapped / 🆕 new per signal
 ```
 
-### Hill-Climb Automation
+### Hill-Climb (Autonomous Background)
 
-Runs the `verify-work` evaluation loop iteratively: detects gaps (source files
-without a segment reference), proposes batch of segments, re-verifies, and
-repeats until all gaps are filled (plateau at 0).
+The skill runs hill-climb internally during `re-scan` or when gap count is
+persistently high. It iterates: detect gaps → propose → accept → compile →
+re-measure → repeat until plateau at 0 gaps.
 
 ```
-/hill-climb <src-dir> <bl-dir> <patterns-dir> [--max-iter 20] [--batch 50] [--confidence high|medium|low]
+hill-climb (internal)
   └── hill-climb.sh
-       ├── Setup:
-       │    └── Generate manifest baseline (snapshot of source file hashes)
-       │
-       ├── Iteration loop:
-       │    ├── Set manifest to empty → verify-work sees ALL source files as "new"
-       │    ├── verify-work.py → detect files without any segment code reference
+       ├── Generate manifest baseline
+       ├── Loop:
+       │    ├── verify-work → detect files without segment code refs
        │    ├── If 0 gaps → plateau → stop
-       │    ├── Take first N (--batch) → propose-entries.sh --auto → create segments
+       │    ├── Take first N → propose-entries.sh --auto → proposals/
        │    ├── Validate frontmatter → rollback on failure
-       │    ├── compile-segments.py --rebuild (SOURCE_MAP grows)
-       │    └── Next iteration: re-check entire codebase against new SOURCE_MAP
+       │    ├── compile-segments.py --rebuild
+       │    └── Re-check against new SOURCE_MAP
        │
-       └── Output: initial gaps → final gaps, segments integrated, rollbacks
+       ├── approve --all to stage into split/
+       └── Output: initial gaps → final gaps, proposals written, rollbacks
 ```
 
 The metric is **binary gap count**: how many source files have zero segment
@@ -573,32 +658,57 @@ surface data-grounded improvement suggestions.
 | `duration_s` | Wall-clock duration in seconds |
 | `success` | Whether the operation produced the expected result |
 | `exit_code` | Process exit code |
-| `files_scanned` | Source files examined |
+| `files.scanned` | Source files examined during this op |
+| `files.total` | Total source files in the repository |
 | `loc_scanned` | Lines of code examined |
-| `gaps_before/after` | Gap count before and after |
-| `segments_before/after` | Segment count before and after |
-| `tool_calls` | Count of Read/Write/Edit/Bash/Grep/Glob calls made |
+| `gaps.before` | Gaps before the operation |
+| `gaps.after` | Gaps after the operation |
+| `gaps.resolved` | Auto-computed: `before - after` (clamped to 0) |
+| `segments.before` | Segments before the operation |
+| `segments.after` | Segments after the operation |
+| `segments.added` | Auto-computed: `after - before` (clamped to 0) |
+| `script_calls` | Number of sub-scripts invoked during this op |
+| `tool_calls.*` | Per-tool counts: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `task`, `total` |
+| `tokens.in` | Input tokens consumed |
+| `tokens.out` | Output tokens produced |
 | `output_chars` | Output character count |
 | `decision` | Why this approach was chosen (brief string) |
 | `error` | Error message if the operation failed |
 
-**Log location:** `~/.config/opencode/skills/domain-druid/meta/operations.ndjson`
+Records use a nested JSON format. Example:
+```json
+{
+  "op": "verify-work", "duration_s": 2.1, "files": {"scanned": 470, "total": 470},
+  "gaps": {"before": 28, "after": 0, "resolved": 28},
+  "segments": {"before": 10, "after": 38, "added": 28},
+  "script_calls": 3,
+  "tool_calls": {"read": 1, "write": 12, "bash": 2, "task": 1, "total": 16},
+  "tokens": {"in": 8500, "out": 1200}
+}
+```
+
+**Log location:** `meta/operations.ndjson` (relative to the skill root)
 (append-only newline-delimited JSON).
 
 **Workflow:**
 
 1. **After each operation**, call `meta-record.sh <op-name> [flags]` with all
    available data. The agent self-reports: it tracks start/end times, counts
-   its own tool calls, captures gaps delta, and records its decision rationale
-   in `--decision`.
+   its own tool calls, captures gaps delta and coverage metrics, and records
+   its decision rationale in `--decision`.
 
 2. **Every N operations** (N read from `meta/threshold`, default 3), the agent
    calls `meta-analyze.sh` to scan for patterns:
    - ⏱ Duration outliers — ops significantly slower than their mean
-   - 0️⃣ Zero-delta ops — operations that changed nothing (wasted work)
+   - 0️⃣ Zero-delta ops — operations that resolved no gaps (wasted work)
+   - 📈 Gap resolution velocity — efficient batch processing
    - ❌ Failure clusters — same op failing repeatedly
    - 🔁 Repetitive tool chains — sequences that repeat and could be scripted
    - 📊 Volume spikes — files/loc scanned jumping anomalously
+   - 📊 Coverage ratio — scanned/total ratio variance
+   - 📜 Script call volume — operations with many sub-script calls
+   - 🧩 Token consumption — input/output token spikes
+   - 🧰 Tool call outliers — ops with abnormally high tool usage
 
 3. Output is written to `meta/suggestions.md`. The agent presents this to the
    user for review, and records which suggestions were accepted or rejected.
@@ -606,7 +716,7 @@ surface data-grounded improvement suggestions.
 **Manual trigger:**
 
 ```
-/meta-suggest [--threshold N]
+meta (manual trigger, normally autonomous)
   └── scripts/meta-suggest.sh ──→ meta-analyze.sh → suggestions.md
 ```
 
@@ -616,38 +726,34 @@ surface data-grounded improvement suggestions.
 
 **Agent responsibilities:**
 - Track operation start time with `date +%s` before each major operation
-- Count tool calls made during the operation (Read, Write, Edit, Bash, Grep, Glob)
-- Capture gaps delta from `verify-work.py` stdout when applicable
+- Count tool calls made during the operation (Read, Write, Edit, Bash, Grep, Glob, Task)
+- Count sub-scripts called (`--script-calls`) — distinct from total bash calls
+- Count total source files in repo (`--files-total`) for coverage ratio tracking
+- Estimate token consumption if accessible (`--tokens-in`, `--tokens-out`)
+- Capture gaps/segments delta from `verify-work.py` stdout when applicable
 - Log decision rationale: `--decision "why I chose this approach"`
 - After every N operations, run `meta-analyze.sh` and present `suggestions.md`
 - After user review, log accepted/rejected suggestions in a follow-up record
 
 ### Fingerprint Sync
 
-```
-/rebuild-fingerprints
-  └── rebuild-fingerprints.sh ──→ parse all segments → FINGERPRINTS.md
-```
-
-Run after any segment add/move to keep fingerprints in sync with segments.
+Fingerprints rebuild autonomously on every compile (after every write).
 
 ### Parallel Scan Merge
 
-```
-/merge-parallel report1.md report2.md report3.md
-  └── merge-parallel-results.sh ──→ deduplicate → score → rank → merged report
-```
-
-Use with `/scan-parallel` subagent results for large repos.
+Parallel scan results merge autonomously. The `merge-parallel-results.sh` script
+is invoked internally when multiple scan subagents return results.
 
 ### Coverage Check
 
 ```
-/coverage
+coverage
   └── tree -d source/ → lookup segment Code: entries → compute % per dir → flag low
 ```
 
-See [references/coverage.md](references/coverage.md) for full workflow.
+Coverage maps source directories to segment Code: entries, computing % per directory
+and flagging areas with low coverage. The agent calculates this by running
+`tree -d source/` and cross-referencing against SOURCE_MAP.md.
 
 ## Split Behavior (Auto-Scale)
 
@@ -740,7 +846,7 @@ Updated after every ingestion or validation cycle.
   ┌──────────────────┐
   │   proposed*      │  (developer intent, no Code entries)
   └────────┬─────────┘
-           │ code implemented → detected by scan or /sync-bl
+            │ code implemented → detected by scan or re-scan
            ▼
   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
   │ pending  │ → │  active  │ → │superseded│ → │ archived │
@@ -752,7 +858,7 @@ Updated after every ingestion or validation cycle.
 
   * proposed is created from conversation, feature requests without
     code location, or from human intent. It transitions to active when
-    code implementing it is detected by a scan or /sync-bl.
+     code implementing it is detected by a scan or re-scan.
 ```
 
 - **pending** — draft in PENDING.md awaiting user y/n/edit (short-lived, never persisted)
